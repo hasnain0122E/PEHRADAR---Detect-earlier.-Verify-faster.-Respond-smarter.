@@ -58,7 +58,7 @@ Each decision is tagged **[CONFIRMED]** (decided, build on it) or **[INVESTIGATE
 | Live updates | Polling (3 s dashboard, 1 s active job) | CONFIRMED | SSE; WebSockets | Polling is the simplest thing that meets NFR-02 and works behind any proxy or sleeping host. SSE is deferred until polling is shown to be insufficient. |
 | Job execution | In-process single worker thread + DB-persisted job rows | CONFIRMED | Celery/RQ + Redis; FastAPI BackgroundTasks | No extra infrastructure. A single worker bounds CPU/RAM on small instances. DB rows make progress visible and allow restart recovery. |
 | CV runtime | OpenCV (decode, sampling, drawing) + ONNX Runtime (CPU inference) | CONFIRMED | PyTorch + Ultralytics at runtime | ONNX Runtime is far smaller than PyTorch (smaller image, lower RAM, faster cold start). Training/export tooling stays off the runtime image. |
-| Detector model | Pretrained fire/smoke YOLOv8n ONNX (`fiacecson20/cctv-ai-fire-smoke`, 320 px), treated as AGPL-3.0. Heuristic baseline deferred. | CONFIRMED locally (M2, Tracker D26); Render timing pending | See §4.3 | See §4.3. |
+| Detector model | Pretrained fire/smoke YOLOv8n ONNX (`fiacecson20/cctv-ai-fire-smoke`, 320 px), treated as AGPL-3.0. Heuristic baseline deferred. | CONFIRMED on Render (M2, Tracker D26) | See §4.3 | See §4.3. |
 | Map | MapLibre GL JS (via `react-map-gl/maplibre` or direct) with vector tiles; 3D via `fill-extrusion` | Library CONFIRMED; tile source INVESTIGATE (M2) | CesiumJS + Cesium ion; Google Photorealistic 3D Tiles; Leaflet | See §7. |
 | Routing | Road-network router with straight-line fallback | Fallback CONFIRMED; provider INVESTIGATE (M2) | OSRM public demo; OpenRouteService; GraphHopper; self-hosted OSRM | See §7.3. |
 | Notifications | Provider adapters: `console` (dev/test), `email`, `webhook` | Adapters CONFIRMED; email provider INVESTIGATE (M2) | Resend; SMTP (e.g. Gmail app password); SendGrid; Slack/Discord webhook | See §6. |
@@ -411,13 +411,14 @@ Default candidates: **web → Vercel**, **API → Render or Railway**, **DB → 
 - **Resulting limits:** Tracker D25.
 - **Inference cost is not included.** It is measured in M2-S1 once a model exists, and is likely the larger cost.
 
-**Stage 4: model on Render (M2) [INVESTIGATE: local only so far].**
+**Stage 4: model on Render (M2) [CONFIRMED 2026-10-17].**
 - **Build command** becomes `uv sync --locked --no-dev && uv run --no-sync python -m app.detection.fetch_model`. It downloads the pinned 12 MB ONNX and verifies its SHA-256; the build fails on a mismatch.
-- **Projections (not yet measured on Render):**
-  - Inference: about 155 ms per sampled frame at about 0.15 CPU.
-  - A 30 s 480p15 clip: about 13 s.
-  - Memory: a peak of about 185 MB out of 512 MB.
-- **Next step:** measure on Render (Tracker M2-T9).
+- **Measured on Render (three 30 s 480p15 clips):**
+  - Inference: **187–195 ms per sampled frame**.
+  - Processing: **12.8–14.8 s** per clip; 15.6–18.3 s per request including upload.
+  - Memory: peak **178.5 MB** out of 512 MB.
+  - Decisions and confidences are identical to the local run.
+- **Result:** the free instance is viable for synchronous processing of clips ≤ 30 s. A 60 s clip is projected at about 30 s. Details: Tracker M2.
 
 **Remaining host checks (M1d on Render, then M3/M7).** Docker is introduced only if the native runtime cannot install OpenCV/ONNX Runtime reliably. Measure and record in `Tracker.md`:
 1. (Done in M1c, natively: see Stage 2.) If Docker is ever needed, the image builds with `opencv-python-headless` and `onnxruntime`. Record image size.

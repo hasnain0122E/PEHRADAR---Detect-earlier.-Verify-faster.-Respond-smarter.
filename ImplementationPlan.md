@@ -124,7 +124,7 @@ What M1d adds:
   - Neon/Postgres: decided only in M1d, built in M3 (see Tracker D24).
   - Background thread: added only if Render's measurements rule out synchronous processing (D23).
 
-### M2 — Fire/smoke detection MVP ← *in progress (local done; Render pending). User brief 2026-10-17; replaces the S-Model and S-Samples spikes below.*
+### M2 — Fire/smoke detection MVP ← *DONE 2026-10-17 (Render: 30 s clip in 13–15 s, peak 178.5 MB). User brief; replaces the S-Model and S-Samples spikes below.*
 **Dep:** M1d. Proves the AI capability end to end with **one** real pretrained model:
 
 `POST /api/v1/detect/fire`: MP4 → validate → temp file → decode → sample at 2 fps → YOLOv8n ONNX (CPU) → temporal confirmation (3-of-5 at 0.45) → strongest evidence JPEG → JSON → temp file deleted.
