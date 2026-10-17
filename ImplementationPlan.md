@@ -150,7 +150,27 @@ Remaining spikes (S-Map, S-Routing, S-Notify, S-Stations) keep the table below. 
 | **S-Stations** | Overpass export + `seed/stations.json` with provenance; count of Karachi stations found | Manual `PUBLIC_WEB` entries with source URLs |
 - **Exit:** each Q1–Q6 has a recorded decision (or adopted fallback) in Tracker → Decisions, with evidence.
 
-### M3 — Backend domain core
+### M3 — Operational backend + persistent incident workflow ← *in progress (built and tested locally on SQLite; Neon/Render pending). User brief 2026-10-17; supersedes the draft below where they differ.*
+**Dep:** M2.
+- **Built:**
+  - SQLAlchemy 2.1 + Alembic `0001` (camera, fire_station, detection_event with evidence bytes, incident, incident_timeline_event);
+  - psycopg 3 for Neon;
+  - an idempotent Karachi seed (8 simulated cameras, 5 OSM stations);
+  - camera, station, detection and incident endpoints;
+  - `camera_id` on `/detect/fire` creates **pending** detections;
+  - confirm/reject;
+  - severity rule;
+  - nearest available station by Haversine (`is_driving_eta: false`);
+  - explicit state machine with PATCH;
+  - append-only timeline ordered by `seq`;
+  - a shared operator key for writes.
+- **Not in scope:** dashboard, map, notifications, routing, dedup or attaching detections to an open incident, analysis jobs, `/samples`, `/dashboard`, OpenAPI type generation.
+- **Exit:**
+  1. Tests pass, including migration ↔ model parity and PostgreSQL DDL compilation.
+  2. The migration and seed run on Neon from the Render start command.
+  3. An incident created on Render survives a Render restart.
+
+#### Original M3 draft (v0.1, kept for reference)
 **Dep:** M1.
 - SQLAlchemy models + first Alembic migration exactly matching `Schema.md` (incl. CHECK constraints, and the circular FK `incident.primary_detection_id` ↔ `detection_event.incident_id` handled with `use_alter`).
 - Seed loader (cameras simulated, stations from S-Stations or a placeholder `MANUAL_DEMO` set until then).

@@ -1,1 +1,11 @@
-"""SQLAlchemy ORM models (see Schema.md). Implemented in M3."""
+"""ORM models (M3). Field reference: Schema.md."""
+
+from app.models.tables import (
+    Camera,
+    DetectionEvent,
+    FireStation,
+    Incident,
+    IncidentTimelineEvent,
+)
+
+__all__ = ["Camera", "DetectionEvent", "FireStation", "Incident", "IncidentTimelineEvent"]

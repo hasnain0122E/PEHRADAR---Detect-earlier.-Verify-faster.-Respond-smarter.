@@ -20,12 +20,14 @@ from app.detection.video import VideoError
 
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
 COPY_CHUNK_BYTES = 1024 * 1024
+MAX_TEXT_FIELDS = 2  # e.g. camera_id
 
 # One video at a time across all endpoints: bounds CPU and RAM on a 0.15-CPU / 512 MB host.
 _video_lock = threading.Lock()
 
-# Receives (temp_path, size_bytes) and returns the response. Runs in a worker thread.
-Processor = Callable[[str, int], JSONResponse]
+# Receives (temp_path, size_bytes, other_form_fields) and returns the response. Runs in a worker
+# thread. Other fields are the non-file form values (e.g. camera_id), as strings.
+Processor = Callable[[str, int, dict[str, str]], JSONResponse]
 
 
 def error_response(status: int, code: str, message: str, **details) -> JSONResponse:
@@ -47,18 +49,21 @@ async def handle_mp4_upload(request: Request, max_mb: float, process: Processor)
     if not _video_lock.acquire(blocking=False):
         return error_response(409, "VIDEO_BUSY", "Another video is being processed; retry shortly")
     try:
-        async with request.form(max_files=1, max_fields=1) as form:
+        async with request.form(max_files=1, max_fields=MAX_TEXT_FIELDS + 1) as form:
             upload = form.get("file")
             if not isinstance(upload, UploadFile):
                 return error_response(422, "VALIDATION_ERROR", "Missing form field 'file'")
             if not (upload.filename or "").lower().endswith(".mp4"):
                 return error_response(415, "UNSUPPORTED_MEDIA", "Only .mp4 files are accepted")
-            return await run_in_threadpool(_save_and_process, upload, max_mb, process)
+            fields = {k: v for k, v in form.items() if isinstance(v, str)}
+            return await run_in_threadpool(_save_and_process, upload, max_mb, process, fields)
     finally:
         _video_lock.release()
 
 
-def _save_and_process(upload: UploadFile, max_mb: float, process: Processor) -> JSONResponse:
+def _save_and_process(
+    upload: UploadFile, max_mb: float, process: Processor, fields: dict[str, str]
+) -> JSONResponse:
     fd, path = tempfile.mkstemp(prefix="pehradar-", suffix=".mp4")
     try:
         with os.fdopen(fd, "wb") as out:
@@ -72,7 +77,7 @@ def _save_and_process(upload: UploadFile, max_mb: float, process: Processor) -> 
         if header[4:8] != b"ftyp":
             return error_response(415, "UNSUPPORTED_MEDIA", "File is not an MP4 container")
         try:
-            return process(path, size)
+            return process(path, size, fields)
         except VideoError as exc:
             return error_response(422, exc.code, str(exc))
     finally:

@@ -89,49 +89,44 @@ In all of these cases no job row is created.
 
 ## 3. State machines
 
-### 3.1 DetectionEvent.status
+### 3.1 DetectionEvent.review_status (implemented M3)
 
 ```
-             ┌──────────────── created by pipeline + dedup.decide ────────────────┐
-             ▼                                                                    ▼
-      PENDING_REVIEW ── confirm ──▶ CONFIRMED                                 DUPLICATE (terminal;
-             │                                                                 linked to parent detection
-             └────── reject ──▶ REJECTED                                       or incident)
+POST /detect/fire with camera_id, result "detected"
+             │
+             ▼
+          pending ── POST /detections/{id}/confirm ──▶ confirmed (+ incident)
+             │
+             └──── POST /detections/{id}/reject ──▶ rejected (no incident)
 ```
-- `CONFIRMED`, `REJECTED` and `DUPLICATE` are terminal. There is no un-reject in the MVP. If the operator rejected by mistake, the next detection from that camera creates a new card, or the sample can be re-run.
+- `confirmed` and `rejected` are terminal. A second review returns `409 DETECTION_ALREADY_REVIEWED`, with the existing `incident_id` if there is one.
+- `not_detected` results create no row.
+- Duplicate handling (attaching repeat detections from one camera to an open incident) is **not built in M3**. Each confirmed detection opens its own incident (Tracker K14).
 
-### 3.2 Incident.status
+### 3.2 Incident.status (implemented M3; supersedes the v0.1 OPEN/NOTIFIED/ACKNOWLEDGED/RESOLVED draft)
 
 ```
-  (confirm detection, no active incident on camera)
-                    │
-                    ▼
-                  OPEN ──── first notification SENT ───▶ NOTIFIED ──── ack POST ───▶ ACKNOWLEDGED
-                    │                                       │                             │
-                    └──────────── resolve ──────────────────┴───────── resolve ───────────┘
-                                                            ▼
-                                                        RESOLVED (terminal)
+ operator confirms detection
+            │
+            ▼
+        confirmed ──(system: nearest available station found)──▶ station_selected ──▶ notified ──▶ acknowledged ──▶ resolved
+            │                                                         │                 │              │
+            └───────────────────────── resolved / rejected ───────────┴─────────────────┘              │
+                                                                                                    resolved
 ```
 
-| From | Event | To | Guard |
+| From | To | Who | Guard / effect |
 |---|---|---|---|
-| — | Detection confirmed | `OPEN` | No non-RESOLVED incident for that camera. Otherwise attach to the existing one. |
-| `OPEN` | Notification SENT | `NOTIFIED` | — |
-| `OPEN` | Notification FAILED | `OPEN` | (no change) |
-| `NOTIFIED` | Additional notification SENT/FAILED | `NOTIFIED` | ≤ `NOTIFY_MAX_PER_INCIDENT` |
-| `NOTIFIED` | Ack POST | `ACKNOWLEDGED` | Valid token |
-| `ACKNOWLEDGED` | Ack POST (another notification) | `ACKNOWLEDGED` | (no change) |
-| `OPEN`/`NOTIFIED`/`ACKNOWLEDGED` | Resolve | `RESOLVED` | `resolution_code` required |
-| `RESOLVED` | anything except a late ack | — | `409 INVALID_STATE_TRANSITION` |
+| (none) | `confirmed` | operator (confirm detection) | Detection is `pending`. Coordinates come from the camera; severity rule (Schema.md §6). |
+| `confirmed` | `station_selected` | system, same transaction | An `available` station exists. Nearest by Haversine; stores `station_distance_km`. If none, the incident stays `confirmed` and the timeline gets `no_station_available`. |
+| `station_selected` | `notified` | operator (PATCH) | **Recorded by the operator: PehRadar sent no notification (M3).** |
+| `notified` | `acknowledged` | operator (PATCH) | Same: operator-recorded. |
+| `confirmed`, `station_selected`, `notified`, `acknowledged` | `resolved` | operator (PATCH) | Sets `resolved_at`. Terminal. |
+| `confirmed`, `station_selected`, `notified` | `rejected` | operator (PATCH) | False alarm found after confirmation. Terminal. |
+| `resolved`, `rejected` | anything | — | `409 INVALID_STATE_TRANSITION` |
 
-Allowed actions per state:
-| Action | OPEN | NOTIFIED | ACKNOWLEDGED | RESOLVED |
-|---|---|---|---|---|
-| Assign / change station | ✔ | ✔ | ✔ | ✘ |
-| Send notification | ✔ (station required) | ✔ (station required) | ✘ | ✘ |
-| Retry failed notification | ✔ | ✔ | ✘ | ✘ |
-| Add note | ✔ | ✔ | ✔ | ✔ |
-| Resolve | ✔ | ✔ | ✔ | ✘ |
+- PATCH accepts only `notified`, `acknowledged`, `resolved` and `rejected` (anything else → `422 VALIDATION_ERROR`). `confirmed` and `station_selected` are set only by the review flow.
+- `detected` is reserved: the pre-review stage is modelled by the detection's `pending` status, because incidents exist only after a human confirms.
 
 ### 3.3 Notification.status
 ```
@@ -173,18 +168,14 @@ Operator      Web (Next.js)            API (FastAPI)              Worker thread 
    │ sees ACK      │ poll                    │                          │                    │                  │                │
 ```
 
-## 5. Timeline events written per flow
+## 5. Timeline events written per flow (implemented M3)
 
-| Flow step | `IncidentTimelineEvent.event_type` | `actor_type` |
+| Flow step | `event_type` (in `seq` order) | `actor` |
 |---|---|---|
-| Confirm creates incident | `DETECTION_CREATED` (backdated to detection `created_at`), `DETECTION_CONFIRMED`, `INCIDENT_CREATED` | SYSTEM, OPERATOR, SYSTEM |
-| Confirm attaches to existing incident | `DETECTION_CONFIRMED` (+ `SEVERITY_CHANGED` if raised) | OPERATOR |
-| Duplicate attached to incident | `ADDITIONAL_DETECTION` | SYSTEM |
-| Candidates computed | `STATION_SUGGESTED` (payload: ranked ids, method) | SYSTEM |
-| Assign station | `STATION_ASSIGNED` | OPERATOR |
-| Notification | `NOTIFICATION_QUEUED`, then `NOTIFICATION_SENT` or `NOTIFICATION_FAILED` | OPERATOR, SYSTEM |
-| Ack | `NOTIFICATION_ACKNOWLEDGED` | RECIPIENT |
-| Note | `NOTE_ADDED` | OPERATOR |
-| Resolve | `INCIDENT_RESOLVED` | OPERATOR |
+| Operator confirms detection | `detection_created` (occurred_at backdated to `detected_at`), `operator_confirmed`, then `station_selected` or `no_station_available` | system, operator, system |
+| PATCH → `notified` / `acknowledged` | `status_changed` (message says the operator recorded it and PehRadar sent no notification) | operator |
+| PATCH → `resolved` | `resolved` | operator |
+| PATCH → `rejected` | `rejected` | operator |
 
-Rejected detections have no incident and therefore no timeline. Their review data lives on the `detection_event` row.
+- The timeline is returned in `seq` order on `GET /api/v1/incidents/{id}`.
+- Rejected detections have no incident and therefore no timeline; their review data (`reviewed_at`, `reviewed_by`, `review_note`) lives on the `detection_event` row.

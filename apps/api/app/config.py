@@ -9,6 +9,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_ID = "pehradar-api"
 LOCAL_DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
+LOCAL_SQLITE_URL = "sqlite:///./pehradar-dev.db"
 
 
 class Settings(BaseSettings):
@@ -43,6 +44,21 @@ class Settings(BaseSettings):
     detect_single_frame_confidence: float = Field(default=0.0, ge=0, le=1)  # 0 = disabled
     evidence_dir: str | None = None  # default: <system temp>/pehradar-evidence
     evidence_max_files: int = Field(default=20, ge=1)
+    # M3 persistence. Production: a PostgreSQL URL (Neon), e.g.
+    # postgresql://USER:PASSWORD@HOST/DB?sslmode=require. Unset outside production: local SQLite.
+    database_url: str | None = None
+    # Shared key for state-changing operator calls (header X-Operator-Key). Unset in production
+    # means those calls are refused (503) rather than left open.
+    operator_api_key: str | None = None
+
+    @property
+    def sqlalchemy_url(self) -> str:
+        """DATABASE_URL with the psycopg 3 driver selected; local SQLite file when unset."""
+        url = self.database_url or LOCAL_SQLITE_URL
+        for prefix in ("postgres://", "postgresql://"):
+            if url.startswith(prefix):
+                return "postgresql+psycopg://" + url[len(prefix) :]
+        return url
 
     @property
     def cors_origin_list(self) -> list[str]:
@@ -60,6 +76,20 @@ class Settings(BaseSettings):
                 raise ValueError(f"Invalid CORS origin {origin!r}; expected scheme://host[:port]")
             if self.app_env == "production" and parts.scheme != "https":
                 raise ValueError(f"CORS origin {origin!r} must use https in production")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_database(self) -> "Settings":
+        url = self.database_url
+        if self.app_env == "production":
+            if not url:
+                raise ValueError("DATABASE_URL is required in production (PostgreSQL, e.g. Neon)")
+            if not url.startswith(("postgres://", "postgresql://", "postgresql+psycopg://")):
+                raise ValueError("DATABASE_URL must be a PostgreSQL URL in production")
+        elif url and not url.startswith(
+            ("postgres://", "postgresql://", "postgresql+psycopg://", "sqlite://")
+        ):
+            raise ValueError("DATABASE_URL must be a PostgreSQL or SQLite URL")
         return self
 
 

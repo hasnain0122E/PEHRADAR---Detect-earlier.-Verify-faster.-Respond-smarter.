@@ -90,12 +90,14 @@ The live URLs and verification results are recorded in `Tracker.md`. No producti
 | Root Directory | `apps/api` |
 | Language | Python 3 |
 | Build Command | `uv sync --locked --no-dev && uv run --no-sync python -m app.detection.fetch_model` (M2: downloads the pinned 12 MB fire/smoke model and verifies its SHA-256) |
-| Start Command | `uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Start Command | `uv run --no-sync alembic upgrade head && uv run --no-sync python -m app.seed && uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port $PORT` (M3: idempotent migrations + seed before start) |
 | Health Check Path | `/api/v1/health` |
 | Env `PYTHON_VERSION` | `3.12.15` (explicit, because Render's default for new services is 3.14) |
 | Env `UV_VERSION` | `0.12.24` (verified to read this repo's `uv.lock`) |
 | Env `APP_ENV` | `production` |
 | Env `LOG_LEVEL` | `INFO` |
+| Env `DATABASE_URL` | M3: Neon PostgreSQL connection string (secret; required in production) |
+| Env `OPERATOR_API_KEY` | M3: long random secret for operator writes (`X-Operator-Key`) |
 | Env `CORS_ORIGINS` | **Leave unset** until the Vercel URL exists, then set `https://<your-vercel-domain>` |
 
 - Render detects uv because `apps/api/uv.lock` exists.

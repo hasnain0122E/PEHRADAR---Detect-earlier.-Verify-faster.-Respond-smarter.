@@ -52,7 +52,7 @@ Each decision is tagged **[CONFIRMED]** (decided, build on it) or **[INVESTIGATE
 | Frontend | Next.js (App Router) + React + TypeScript + Tailwind CSS | CONFIRMED | Vite + React SPA | Required by brief. Easy Vercel deploy. The dashboard is fully client-rendered (`"use client"`) because the map is client-only anyway. |
 | Data fetching | TanStack Query (polling via `refetchInterval`) | CONFIRMED | SWR; hand-rolled `setInterval` | Built-in polling, dedupe, retry, and cache invalidation after mutations. |
 | Backend | Python 3.12 + FastAPI + Pydantic v2 + Uvicorn | CONFIRMED | Flask; Django | Typed contracts, automatic OpenAPI, async-friendly. **Python 3.12 rather than the locally installed 3.14** because OpenCV/ONNX Runtime wheel availability on 3.14 is not verified. `uv` manages the interpreter. |
-| ORM/migrations | SQLAlchemy 2.0 + Alembic | CONFIRMED | SQLModel; raw SQL | Mature, works on SQLite and Postgres, explicit migrations. |
+| ORM/migrations | SQLAlchemy 2.1 (sync) + Alembic + psycopg 3 | CONFIRMED (M3) | SQLModel; raw SQL; async engine | Mature, works on SQLite and Postgres, explicit migrations. Sync sessions match the existing sync endpoints and threadpool video processing. |
 | DB | SQLite (local dev + tests), PostgreSQL (deployed) | CONFIRMED (dev); deployed provider INVESTIGATE (M1) | Postgres everywhere via Docker; SQLite in prod on a volume | SQLite needs zero setup on Windows. Postgres avoids relying on a persistent disk at the host. Neon free tier is the default candidate. Schema avoids engine-specific features (§11). |
 | Evidence storage | JPEG bytes in DB table `evidence_frame` | CONFIRMED | Local disk; S3/R2 object storage | Evidence frames are small (≤ 250 KB, one per event). Keeping them in the DB removes the need for a persistent volume or object store on free hosts. Revisit if volume grows. |
 | Live updates | Polling (3 s dashboard, 1 s active job) | CONFIRMED | SSE; WebSockets | Polling is the simplest thing that meets NFR-02 and works behind any proxy or sleeping host. SSE is deferred until polling is shown to be insufficient. |
@@ -94,6 +94,23 @@ Exact package versions are **pinned at scaffold time (M1)** and recorded in `pac
 - **Pagination:** `?limit=&cursor=` on list endpoints. Default limit 50, max 200. The MVP volume is small, but the contract is fixed now.
 
 ### 3.1 Endpoints
+
+**Implemented in M3** (`app/routers/operations.py`; full list in `apps/api/README.md`):
+- **Reads (public):**
+  - `GET /cameras[?department=]`, `/cameras/{id}`
+  - `GET /fire-stations`, `/fire-stations/{id}`
+  - `GET /detections[?review_status=]`, `/detections/{id}`, `/detections/{id}/evidence.jpg`
+  - `GET /incidents[?status=&event_type=]`, `/incidents/{id}` (includes the timeline)
+- **Writes (`X-Operator-Key: <OPERATOR_API_KEY>`):**
+  - `POST /detections/{id}/confirm|reject`
+  - `PATCH /incidents/{id}/status`
+  - `POST /detect/fire` with a `camera_id` form field
+- **Differences from the draft table below:**
+  - The env var is `OPERATOR_API_KEY`.
+  - Reads are not key-protected yet; the data is simulated cameras and public OSM stations.
+  - Lists are capped at 100, with no cursor yet.
+- The draft table below stays as the target for later milestones.
+
 
 | Method | Path | Auth | Purpose | Notes / errors |
 |---|---|---|---|---|
@@ -317,7 +334,8 @@ Strategy [CONFIRMED]: each app has its own `.env.example` committed with **place
 | Variable | Example / default | Secret |
 |---|---|---|
 | `APP_ENV` | `development` \| `test` \| `production` | |
-| `DATABASE_URL` | `sqlite:///./var/pehradar.db` | yes (deployed) |
+| `DATABASE_URL` | unset → `sqlite:///./pehradar-dev.db` (dev/test only) | **yes in production**: must be PostgreSQL (Neon) or startup fails. `postgresql://` is mapped to `postgresql+psycopg://`. |
+| `OPERATOR_API_KEY` | unset | yes (deployed): unset in production → writes return 503 |
 | `CORS_ORIGINS` | `http://localhost:3000`. Unset means localhost:3000 outside production and **no origins** in production. `*` is rejected. Production requires https. | |
 | `OPERATOR_ACCESS_KEY` | `change-me` | yes |
 | `PUBLIC_WEB_BASE_URL` | `http://localhost:3000` | |
@@ -420,6 +438,12 @@ Default candidates: **web → Vercel**, **API → Render or Railway**, **DB → 
   - Decisions and confidences are identical to the local run.
 - **Result:** the free instance is viable for synchronous processing of clips ≤ 30 s. A 60 s clip is projected at about 30 s. Details: Tracker M2.
 
+**Stage 5: persistence (M3) [INVESTIGATE: built and tested on SQLite; Neon not yet connected].**
+- **DB:** Neon PostgreSQL via `DATABASE_URL` (direct, non-pooled connection string with `sslmode=require`). Engine uses `pool_pre_ping`, a small pool (3+2) and `pool_recycle=300`, because Neon suspends idle compute.
+- **Start command:** `alembic upgrade head && python -m app.seed && uvicorn …`. Both steps are idempotent. Render's free tier has no pre-deploy hook, and a failure keeps the previous deploy live.
+- **Evidence:** stored as bytes in `detection_event.evidence_jpeg`, so it survives Render restarts. The M2 temp-dir evidence store remains for calls without a camera.
+- **Postgres DDL:** compiles (`alembic upgrade head --sql` is tested). **It has not yet run against a real PostgreSQL server.**
+
 **Remaining host checks (M1d on Render, then M3/M7).** Docker is introduced only if the native runtime cannot install OpenCV/ONNX Runtime reliably. Measure and record in `Tracker.md`:
 1. (Done in M1c, natively: see Stage 2.) If Docker is ever needed, the image builds with `opencv-python-headless` and `onnxruntime`. Record image size.
 2. Cold-start time and idle-sleep behaviour (a free tier may sleep, so there must be a warm-up plan before the demo).
@@ -433,7 +457,7 @@ The API Dockerfile uses a slim Python 3.12 base, `opencv-python-headless`, no Py
 
 ## 11. Database portability rules
 
-Use only types that behave the same on SQLite and Postgres: `String` UUIDs, `DateTime(timezone=True)` stored as UTC, `JSON` (SQLAlchemy generic), `LargeBinary` for JPEG, enums as `String` + `CHECK` constraint (not native PG enums, so migrations stay simple). No partial indexes or engine-specific SQL in the MVP. Tests run on SQLite. One integration test run against Postgres happens before deployment (M7).
+Use only types that behave the same on SQLite and Postgres: `String` UUIDs, `DateTime(timezone=True)` stored as UTC, `JSON` (SQLAlchemy generic), `LargeBinary` for JPEG, enums as `String` + `CHECK` constraint (not native PG enums, so migrations stay simple). No partial indexes or engine-specific SQL in the MVP. Tests run on SQLite, and a test checks that the migration compiles for PostgreSQL. The first real PostgreSQL run is the Neon deploy (M3 manual step), and the remaining items in this section are still planned for M7.
 
 ## 12. Testing strategy
 

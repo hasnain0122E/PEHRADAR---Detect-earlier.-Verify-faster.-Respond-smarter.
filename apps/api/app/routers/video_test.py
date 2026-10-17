@@ -16,7 +16,7 @@ from app.routers.uploads import handle_mp4_upload
 def build_router(settings: Settings) -> APIRouter:
     router = APIRouter()
 
-    def process(path: str, size: int) -> JSONResponse:
+    def process(path: str, size: int, _fields: dict[str, str]) -> JSONResponse:
         report = process_video(path, settings.video_sample_fps, settings.video_max_seconds)
         return JSONResponse({"size_bytes": size, **asdict(report)})
 

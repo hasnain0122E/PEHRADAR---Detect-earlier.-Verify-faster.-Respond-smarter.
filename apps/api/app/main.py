@@ -3,14 +3,17 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.config import Settings, get_settings
+from app.db import make_engine, make_sessionmaker
 from app.detection.evidence import EvidenceStore
 from app.detection.fire_model import FireSmokeModel, ModelUnavailable
-from app.routers import detect, health
+from app.routers import detect, health, operations
+from app.routers.uploads import error_response
 
 API_PREFIX = "/api/v1"
 
@@ -42,16 +45,30 @@ def create_app(
         redoc_url=None,
         lifespan=lifespan,
     )
+    # Engine creation does not connect; the first query does. Migrations: `alembic upgrade head`.
+    engine = make_engine(settings.sqlalchemy_url)
+    app.state.engine = engine
+    app.state.sessionmaker = sessions = make_sessionmaker(engine)
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_error(_request: Request, exc: RequestValidationError):
+        problems = [
+            {"field": ".".join(str(p) for p in e.get("loc", ())), "message": e.get("msg", "")}
+            for e in exc.errors()
+        ]
+        return error_response(422, "VALIDATION_ERROR", "Invalid request", problems=problems)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PATCH"],
         allow_headers=["Content-Type", "X-Operator-Key"],
     )
     app.include_router(health.router, prefix=API_PREFIX)
     evidence = EvidenceStore(settings.evidence_dir, settings.evidence_max_files)
-    app.include_router(detect.build_router(settings, models, evidence), prefix=API_PREFIX)
+    app.include_router(detect.build_router(settings, models, evidence, sessions), prefix=API_PREFIX)
+    app.include_router(operations.build_router(settings), prefix=API_PREFIX)
     if settings.video_test_enabled:
         from app.routers import video_test
 
