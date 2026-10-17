@@ -8,6 +8,7 @@ from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_ID = "pehradar-api"
+LOCAL_DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 
 class Settings(BaseSettings):
@@ -15,19 +16,20 @@ class Settings(BaseSettings):
 
     app_env: Literal["development", "test", "production"] = "development"
     # Comma-separated list of exact browser origins allowed to call the API.
-    cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # Unset: local dev origins outside production, and no browser origins in production.
+    # Empty: no browser origins. Direct (non-browser) requests are never affected by CORS.
+    cors_origins: str | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
     @property
     def cors_origin_list(self) -> list[str]:
+        if self.cors_origins is None:
+            return [] if self.app_env == "production" else list(LOCAL_DEV_ORIGINS)
         return _parse_origins(self.cors_origins)
 
     @model_validator(mode="after")
     def _validate_cors(self) -> "Settings":
-        origins = self.cors_origin_list
-        if not origins:
-            raise ValueError("CORS_ORIGINS must list at least one origin")
-        for origin in origins:
+        for origin in self.cors_origin_list:
             if origin == "*":
                 raise ValueError("CORS_ORIGINS must not contain '*'; list explicit origins")
             parts = urlsplit(origin)

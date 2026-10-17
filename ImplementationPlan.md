@@ -67,18 +67,29 @@ M1 was split into **M1a** (local scaffold, no heavy dependencies, as requested a
 - `apps/web`: Next.js + TS + Tailwind status page calling the health endpoint from the browser. Vitest.
 - JSON logging is deferred to M3, when there are requests worth logging.
 
-**M1b: GitHub + deployment spike** ← *next*
-**Dep:** M1a, plus a GitHub remote and hosting accounts from the user.
-- Push to the user-created GitHub repo. CI workflow (ruff + pytest; lint + typecheck + vitest + build).
-- `apps/api/Dockerfile` (slim, non-root) that **installs `opencv-python-headless` and `onnxruntime`**. The health check also reports that both import, so the spike tests the real heavy dependencies.
+**M1b: GitHub + lightweight deployment** ← *in progress*
+At M1b kickoff the user excluded OpenCV, ONNX Runtime, video processing and the DB from this milestone. M1b proves only that the existing lightweight scaffold runs in production. The heavy-dependency checks moved to **M1c**.
+**Dep:** M1a, GitHub remote, Render and Vercel accounts (user).
+- GitHub repo verified. CI workflow (ruff + pytest; lint + typecheck + vitest + build).
+- API on Render **native Python + uv** (no Docker): Root Directory `apps/api`, `uv sync --locked --no-dev`, `uv run --no-sync uvicorn … --port $PORT`. Settings are in README → Deployment.
+- In production, unset `CORS_ORIGINS` means no browser origins (never a wildcard) until the Vercel origin is known.
+- Then web on Vercel (Root Directory `apps/web`, `NEXT_PUBLIC_API_BASE_URL` set before build), and `CORS_ORIGINS` set to the Vercel origin.
+- **Exit:**
+  1. Public `GET /api/v1/health` returns 200 with `"app": "pehradar-api"`.
+  2. It still works after a fresh redeploy/restart, and the logs show no unexplained startup errors.
+  3. The deployed web page shows "Connected" against the deployed API, with `CORS_ORIGINS` restricted to the Vercel origin.
+  4. CI is green on GitHub.
+  5. Real URLs and results are recorded in Tracker (not in code).
+
+**M1c: heavy-dependency hosting spike** (after M1b, before M4)
+**Dep:** M1b.
+- `apps/api/Dockerfile` (slim, non-root) that **installs `opencv-python-headless` and `onnxruntime`**. The health check also reports that both import, so the spike tests the real heavy dependencies. It is used only if Render's native runtime can't install them.
 - A throwaway spike endpoint `POST /spike/process` (behind `APP_ENV != production` **or** removed after the spike) that decodes an uploaded clip at 2 fps on a background thread and reports duration and peak RSS.
-- **Deploy** web to Vercel and API to the first candidate host (Render or Railway), with Postgres (Neon) connected.
+- Postgres (Neon) connected.
 - Record the measurements listed in `Techspec.md` §10 in `Tracker.md`.
 - **Exit:**
-  1. `uv run pytest` and `npm test` pass locally (output pasted into Tracker).
-  2. Deployed web page shows "API: ok" from the deployed API over HTTPS with CORS restricted.
-  3. A deployed 60 s 720p clip decodes on a background thread. Wall time and peak RAM are recorded. A 50 MB upload succeeds, or the real limit is recorded and `MAX_UPLOAD_MB` adjusted.
-  4. Decision Q1 (host + DB) recorded. If the first host fails a criterion, the second candidate is tried within the spike timebox (½ day).
+  1. A deployed 60 s 720p clip decodes on a background thread. Wall time and peak RAM are recorded. A 50 MB upload succeeds, or the real limit is recorded and `MAX_UPLOAD_MB` adjusted.
+  2. Decision Q1 (host + DB) recorded. If the first host fails a criterion, the second candidate is tried within the spike timebox (½ day).
 
 ### M2 — Technical spikes (time-boxed, can run in parallel with M3)
 **Dep:** M1. Each spike ≤ ½ day. If a spike overruns, the fallback is adopted and recorded.

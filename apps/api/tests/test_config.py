@@ -19,11 +19,27 @@ def test_origins_are_read_from_environment(monkeypatch):
 
 @pytest.mark.parametrize(
     "origins",
-    ["*", "http://localhost:3000,*", "", "localhost:3000", "http://localhost:3000/app"],
+    ["*", "http://localhost:3000,*", "localhost:3000", "http://localhost:3000/app"],
 )
 def test_invalid_origins_are_rejected(origins):
     with pytest.raises(ValidationError):
         make_settings(cors_origins=origins)
+
+
+def test_production_without_origins_allows_no_browser_origins():
+    # Deployment spike: the API is live before the web origin exists. No wildcard fallback.
+    assert make_settings(app_env="production").cors_origin_list == []
+    assert make_settings(app_env="production", cors_origins="").cors_origin_list == []
+
+
+def test_production_with_no_origins_still_serves_direct_requests_but_not_browsers():
+    from fastapi.testclient import TestClient
+
+    prod = TestClient(create_app(make_settings(app_env="production")))
+    response = prod.get("/api/v1/health", headers={"Origin": "https://pehradar-web.vercel.app"})
+
+    assert response.status_code == 200
+    assert "access-control-allow-origin" not in response.headers
 
 
 def test_production_requires_https_origins():

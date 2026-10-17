@@ -21,8 +21,13 @@ Interactive docs (non-production only): `http://localhost:8000/api/v1/docs`.
 | Variable | Default | Notes |
 |---|---|---|
 | `APP_ENV` | `development` | `development` \| `test` \| `production`. Production disables `/docs` and `/openapi.json` and requires https origins. |
-| `CORS_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated exact origins. `*` is rejected at startup. |
+| `CORS_ORIGINS` | unset: `http://localhost:3000,http://127.0.0.1:3000` outside production, **none** in production | Comma-separated exact origins. Empty means no browser origins. `*` is rejected at startup. |
 | `LOG_LEVEL` | `INFO` | |
+
+## Production (Render)
+
+Build: `uv sync --locked --no-dev`. Start: `uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+Full Render settings are in the root `README.md` → Deployment.
 
 ## Layout
 

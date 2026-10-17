@@ -276,7 +276,7 @@ Strategy [CONFIRMED]: each app has its own `.env.example` committed with **place
 |---|---|---|
 | `APP_ENV` | `development` \| `test` \| `production` | |
 | `DATABASE_URL` | `sqlite:///./var/pehradar.db` | yes (deployed) |
-| `CORS_ORIGINS` | `http://localhost:3000` | |
+| `CORS_ORIGINS` | `http://localhost:3000`. Unset means localhost:3000 outside production and **no origins** in production. `*` is rejected. Production requires https. | |
 | `OPERATOR_ACCESS_KEY` | `change-me` | yes |
 | `PUBLIC_WEB_BASE_URL` | `http://localhost:3000` | |
 | `DETECTOR` | `heuristic` \| `onnx` | |
@@ -313,9 +313,16 @@ Strategy [CONFIRMED]: each app has its own `.env.example` committed with **place
 
 ## 10. Deployment [INVESTIGATE — M1 spike]
 
-Default candidates: **web → Vercel**, **API → Docker container on Render or Railway**, **DB → Neon PostgreSQL**. Backup API hosts: Fly.io, Hugging Face Spaces (Docker).
+Default candidates: **web → Vercel**, **API → Render or Railway**, **DB → Neon PostgreSQL**. Backup API hosts: Fly.io, Hugging Face Spaces (Docker).
 
-The spike must measure and record in `Tracker.md`:
+**Stage 1: lightweight deploy (M1b, prepared 2026-10-17, not yet deployed).**
+- API on Render's **native Python runtime with uv** (detected from `apps/api/uv.lock`), Root Directory `apps/api`. No Docker is needed for the current dependencies.
+- `PYTHON_VERSION=3.12.15` is set explicitly. Render's default for new services is 3.14, and its docs only describe `.python-version` at the repository root.
+- `UV_VERSION=0.12.24` (Render's current default) was verified locally to pass `uv lock --check` and `uv sync --locked --no-dev` on our lockfile.
+- Start: `uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
+- Exact settings: README → Deployment.
+
+**Stage 2: heavy-dependency spike (M1c).** Docker is introduced only if the native runtime cannot install OpenCV/ONNX Runtime reliably. The spike must measure and record in `Tracker.md`:
 1. The Docker image builds with `opencv-python-headless` and `onnxruntime`. Record image size.
 2. Cold-start time and idle-sleep behaviour (a free tier may sleep, so there must be a warm-up plan before the demo).
 3. Peak RAM while processing a 60 s 720p clip (must fit the instance, e.g. 512 MB).

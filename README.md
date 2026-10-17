@@ -6,7 +6,7 @@ PehRadar is a hackathon MVP for **fire and smoke incident detection with operato
 
 > ⚠️ **Demo system.** Cameras are simulated, notifications go to controlled test recipients, and station data is unverified. PehRadar is decision support and is **not connected to any emergency service**.
 
-**Current status:** M1a (local scaffold), verified locally. Only a health endpoint and a status page exist. See [`Tracker.md`](Tracker.md).
+**Current status:** M1a (local scaffold) is verified locally. M1b (lightweight deployment) is prepared but **not yet deployed**. Only a health endpoint and a status page exist. See [`Tracker.md`](Tracker.md).
 
 ## Architecture
 
@@ -69,13 +69,48 @@ cd apps\web; npm test; npm run lint; npm run typecheck; npm run build; cd ..\..
 ## Repository layout
 
 ```
-apps/api/    FastAPI backend          (see apps/api/README.md)
-apps/web/    Next.js frontend         (see apps/web/README.md)
-*.md         planning documents
+apps/api/            FastAPI backend          (see apps/api/README.md)
+apps/web/            Next.js frontend         (see apps/web/README.md)
+.github/workflows/   CI: API ruff + pytest; web lint + typecheck + test + build
+*.md                 planning documents
 ```
 
-Planned later (not yet created): `data/sources/`, `samples/`, `models/`, `scripts/`, `.github/workflows/`.
+Planned later (not yet created): `data/sources/`, `samples/`, `models/`, `scripts/`.
 
-## Deployment
+## Deployment (M1b: prepared, not yet deployed)
 
-Not started. The hosting spike is milestone M1b (see Tracker.md).
+Real deployment results are recorded only in `Tracker.md`. No production URL is hard-coded anywhere in the code.
+
+### API on Render (native Python + uv, no Docker)
+
+| Setting | Value |
+|---|---|
+| Service type | Web Service |
+| Repository / branch | this GitHub repo / `main` |
+| Root Directory | `apps/api` |
+| Language | Python 3 |
+| Build Command | `uv sync --locked --no-dev` |
+| Start Command | `uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Health Check Path | `/api/v1/health` |
+| Env `PYTHON_VERSION` | `3.12.15` (explicit, because Render's default for new services is 3.14) |
+| Env `UV_VERSION` | `0.12.24` (verified to read this repo's `uv.lock`) |
+| Env `APP_ENV` | `production` |
+| Env `LOG_LEVEL` | `INFO` |
+| Env `CORS_ORIGINS` | **Leave unset** until the Vercel URL exists, then set `https://<your-vercel-domain>` |
+
+- Render detects uv because `apps/api/uv.lock` exists.
+- `--no-dev` and `--no-sync` keep pytest and ruff out of production. Plain `uv run` would install the dev group at startup.
+- With `APP_ENV=production` and `CORS_ORIGINS` unset, the API serves direct requests (curl, opening the URL in a browser) but **allows no cross-origin browser calls**. A wildcard is never used. Production also requires `https://` origins and disables `/api/v1/docs`.
+- `/` returns 404 by design. The public check URL is `https://<service>.onrender.com/api/v1/health`.
+
+### Web on Vercel (after the API is live)
+
+| Setting | Value |
+|---|---|
+| Root Directory | `apps/web` |
+| Framework Preset | Next.js (auto-detected) |
+| Build / Install / Output | defaults (`next build`, npm with `package-lock.json`) |
+| Node.js | 24.x (from `engines.node: ">=22"`) |
+| Env `NEXT_PUBLIC_API_BASE_URL` | `https://<service>.onrender.com`, set **before** the first build |
+
+`NEXT_PUBLIC_API_BASE_URL` is inlined at build time, so changing it requires a redeploy. After Vercel assigns its domain, set `CORS_ORIGINS=https://<your-vercel-domain>` on Render. Vercel preview deployments use different origins and will show "Disconnected" unless their origin is added too.
