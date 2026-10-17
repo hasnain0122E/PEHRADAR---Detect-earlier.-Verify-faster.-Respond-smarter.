@@ -1,0 +1,62 @@
+# ---- Secrets & local environment (keep *.env.example tracked) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ---- Python / uv ----
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+.vercel/
+npm-debug.log*
+
+# ---- Build output & logs ----
+build/
+dist/
+*.log
+logs/
+
+# ---- Runtime data: uploads, evidence, local DBs (never commit footage) ----
+var/
+uploads/
+*.db
+*.sqlite
+*.sqlite3
+
+# ---- Media & model weights (licences tracked in samples/SOURCES.md, models/README.md) ----
+# Video is ignored everywhere so footage can never be committed by accident. A clip whose
+# licence allows redistribution must be added deliberately with `git add -f`.
+*.mp4
+*.mov
+*.webm
+*.avi
+*.mkv
+*.onnx
+*.pt
+*.pth
+*.safetensors
+
+# ---- IDE / OS ----
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

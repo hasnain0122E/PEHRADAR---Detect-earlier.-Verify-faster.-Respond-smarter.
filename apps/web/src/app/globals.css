@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/* Design tokens from Design.md §3–4. Dark ops theme only in the MVP. */
+@theme {
+  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --color-ink-950: #0a0d12;
+  --color-ink-900: #10151c;
+  --color-ink-850: #151b24;
+  --color-ink-800: #1c2430;
+  --color-ink-700: #2a3442;
+  --color-ink-500: #5b6878;
+  --color-ink-300: #9aa6b5;
+  --color-ink-100: #e6ebf1;
+
+  --color-sev-high: #ff4d3d;
+  --color-sev-medium: #ff9f1c;
+  --color-sev-low: #f2d45c;
+  --color-review: #ffb020;
+  --color-notified: #3da5ff;
+  --color-ack: #2fd1a1;
+  --color-resolved: #6b7685;
+  --color-danger: #ff4d6a;
+  --color-sim: #b39dff;
+  --color-focus: #7cc4ff;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-ink-950);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
