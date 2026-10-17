@@ -73,6 +73,10 @@ Exact package versions are **pinned at scaffold time (M1)** and recorded in `pac
 **Pinned in M1a (2026-10-17).** Only versions published at least 2 weeks earlier were accepted (`npm install --before=2026-10-03`).
 - **API:** Python 3.12.15 (uv-managed), FastAPI 0.143.3, Uvicorn 0.54.0, pydantic-settings 2.16.0. Dev: pytest 9.1.1, httpx2 2.13.1 (Starlette's TestClient deprecates `httpx` in favour of `httpx2`), Ruff 0.17.1.
 - **Web:** Next.js 16.3.8 (Turbopack), React 19.2.8, Tailwind CSS 4.3.3 (CSS-first `@theme` tokens in `globals.css`, no `tailwind.config`), TypeScript 5.9.3, ESLint 9.39.5. Tests: Vitest 5.0.3 + Testing Library + jsdom. `@types/node` 24 matches the local Node 24 runtime (Vitest 5 rejects `@types/node` 20).
+- **CV runtime (M1c, 2026-10-17, same 2-week rule):** `opencv-python-headless` 4.14.0.94 and `onnxruntime` 1.30.0, plus their dependencies numpy 2.5.3, protobuf 7.36.2 and flatbuffers 25.12.19.
+  - OpenCV 4.14 rather than 5.0.0.93, because 4.x is the mature API.
+  - The headless build needs no libGL or GUI libraries.
+  - numpy is pinned at 2.5.3 because 2.5.4 (released 2026-10-10) is under 2 weeks old.
 - **Not yet added:** TanStack Query, MapLibre, `openapi-typescript`. Each is added in the milestone that first needs it.
 - `NEXT_PUBLIC_API_BASE_URL` is inlined at **build** time, so the web host must set it before `next build`.
 
@@ -315,15 +319,30 @@ Strategy [CONFIRMED]: each app has its own `.env.example` committed with **place
 
 Default candidates: **web → Vercel**, **API → Render or Railway**, **DB → Neon PostgreSQL**. Backup API hosts: Fly.io, Hugging Face Spaces (Docker).
 
-**Stage 1: lightweight deploy (M1b, prepared 2026-10-17, not yet deployed).**
+**Stage 1: lightweight deploy (M1b, deployed and verified 2026-10-17; evidence in Tracker).**
 - API on Render's **native Python runtime with uv** (detected from `apps/api/uv.lock`), Root Directory `apps/api`. No Docker is needed for the current dependencies.
 - `PYTHON_VERSION=3.12.15` is set explicitly. Render's default for new services is 3.14, and its docs only describe `.python-version` at the repository root.
 - `UV_VERSION=0.12.24` (Render's current default) was verified locally to pass `uv lock --check` and `uv sync --locked --no-dev` on our lockfile.
 - Start: `uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port $PORT`.
 - Exact settings: README → Deployment.
 
-**Stage 2: heavy-dependency spike (M1c).** Docker is introduced only if the native runtime cannot install OpenCV/ONNX Runtime reliably. The spike must measure and record in `Tracker.md`:
-1. The Docker image builds with `opencv-python-headless` and `onnxruntime`. Record image size.
+**Stage 2: CV runtime feasibility (M1c) [INVESTIGATE: verified locally, Render pending].** Both packages install natively from wheels, so Docker is not used.
+
+*Local evidence, 2026-10-17:*
+- **Wheels:** both are prebuilt for CPython 3.12 Linux x86_64.
+  - OpenCV: `cp37-abi3-manylinux_2_28`.
+  - ONNX Runtime: `cp312-manylinux_2_28`, which needs glibc ≥ 2.28.
+  - A clean `--only-binary :all:` install for Linux with uv 0.12.24 succeeds, so nothing compiles from source.
+- **Download:** about 100 MB.
+- **Installed size:** production environment grows from 35 MB to 315 MB.
+  - OpenCV: cv2 78 MB plus bundled libraries 84 MB.
+  - ONNX Runtime: 62 MB.
+  - numpy: 57 MB.
+- **System libraries:** none extra. Beyond their bundled libraries, the native modules link only base glibc libraries (libc, libm, libstdc++, libgcc_s, libdl, libpthread, librt) plus libz. OpenCV bundles FFmpeg (libavcodec, libavformat) for later video decode.
+- **Memory (Windows):** loading cv2 and onnxruntime adds about 35 MB to the running API, and the full self-check adds about 42 MB (43 → 85 MB). Import takes about 0.25 s. The Linux figure is measured on Render by the startup check (`VmRSS`/`VmHWM`).
+
+**Stage 3: host workload spike (M1d).** Docker is introduced only if the native runtime cannot install OpenCV/ONNX Runtime reliably. The spike must measure and record in `Tracker.md`:
+1. (Done in M1c, natively: see Stage 2.) If Docker is ever needed, the image builds with `opencv-python-headless` and `onnxruntime`. Record image size.
 2. Cold-start time and idle-sleep behaviour (a free tier may sleep, so there must be a warm-up plan before the demo).
 3. Peak RAM while processing a 60 s 720p clip (must fit the instance, e.g. 512 MB).
 4. The background thread keeps running after the response returns.

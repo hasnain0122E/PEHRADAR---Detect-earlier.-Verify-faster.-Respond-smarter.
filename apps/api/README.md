@@ -1,6 +1,6 @@
 # PehRadar API (`apps/api`)
 
-FastAPI backend. Python **3.12** managed by [uv](https://docs.astral.sh/uv/). M1 scope: health endpoint and CORS only.
+FastAPI backend. Python **3.12** managed by [uv](https://docs.astral.sh/uv/). Current scope: health endpoint, CORS, and the CV runtime (OpenCV headless and ONNX Runtime CPU) with a self-check. No detector yet.
 
 ## Commands (run inside `apps/api`)
 
@@ -23,6 +23,9 @@ Interactive docs (non-production only): `http://localhost:8000/api/v1/docs`.
 | `APP_ENV` | `development` | `development` \| `test` \| `production`. Production disables `/docs` and `/openapi.json` and requires https origins. |
 | `CORS_ORIGINS` | unset: `http://localhost:3000,http://127.0.0.1:3000` outside production, **none** in production | Comma-separated exact origins. Empty means no browser origins. `*` is rejected at startup. |
 | `LOG_LEVEL` | `INFO` | |
+| `CV_RUNTIME_CHECK` | `false` | M1c spike only. `true` runs the OpenCV/ONNX Runtime self-check at startup and logs one `CV runtime check OK` line. Startup fails if the check fails. |
+
+CV runtime self-check (M1c): `uv run python -m app.detection.runtime_check` prints the OpenCV, numpy and ONNX Runtime versions and the execution providers. CPU only, no model weights.
 
 ## Production (Render)
 

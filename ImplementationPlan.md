@@ -81,9 +81,23 @@ At M1b kickoff the user excluded OpenCV, ONNX Runtime, video processing and the 
   4. CI is green on GitHub.
   5. Real URLs and results are recorded in Tracker (not in code).
 
-**M1c: heavy-dependency hosting spike** (after M1b, before M4)
-**Dep:** M1b.
-- `apps/api/Dockerfile` (slim, non-root) that **installs `opencv-python-headless` and `onnxruntime`**. The health check also reports that both import, so the spike tests the real heavy dependencies. It is used only if Render's native runtime can't install them.
+**M1c: CV runtime feasibility spike** ← *in progress (local verification done; Render verification pending)*
+**Dep:** M1b. The user's M1c brief limits this to the runtime only: no detector, weights, upload, incidents, DB, frontend, map or notifications.
+- Add only `opencv-python-headless` and `onnxruntime` (CPU) to the API with uv. No torch, ultralytics, ffmpeg-python or GPU packages.
+- `app/detection/runtime_check.py` covers both libraries. It checks that cv2 imports and runs (colour convert, resize, JPEG round trip), that numpy works, and that the CPU provider is present. It also runs a tiny in-memory ONNX graph on the CPU provider. Pytest runs it, and so does `python -m app.detection.runtime_check`. It runs at startup only when `CV_RUNTIME_CHECK=true`, which is off by default. There is no diagnostic endpoint.
+- Render build/start commands unchanged. A Dockerfile is used only if Render's native runtime can't install these.
+- **Exit:**
+  1. Locally: `uv sync --locked`, pytest, ruff check and format all pass, and the import check prints versions and providers.
+  2. On Render: the build installs from wheels, the startup log shows `CV runtime check OK` with the CPU provider and RSS, health stays 200, and the check flag is turned off afterwards.
+- **Fallback order if Render fails:**
+  1. Different package version.
+  2. Different Python 3.12 patch.
+  3. CPU-only runtime change.
+  4. Docker.
+  5. Hosted inference.
+
+**M1d: host workload spike** (after M1c, before M4)
+**Dep:** M1c.
 - A throwaway spike endpoint `POST /spike/process` (behind `APP_ENV != production` **or** removed after the spike) that decodes an uploaded clip at 2 fps on a background thread and reports duration and peak RSS.
 - Postgres (Neon) connected.
 - Record the measurements listed in `Techspec.md` §10 in `Tracker.md`.

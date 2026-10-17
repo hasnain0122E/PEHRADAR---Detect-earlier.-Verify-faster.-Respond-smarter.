@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # Empty: no browser origins. Direct (non-browser) requests are never affected by CORS.
     cors_origins: str | None = None
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    # M1c spike only: run the OpenCV/ONNX Runtime self-check at startup and log the result.
+    # Startup fails if the check fails. Remove with the spike.
+    cv_runtime_check: bool = False
 
     @property
     def cors_origin_list(self) -> list[str]:

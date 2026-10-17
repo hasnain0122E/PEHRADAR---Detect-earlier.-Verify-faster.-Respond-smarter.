@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.143.3,<0.144",
+    "onnxruntime>=1.30.0,<1.31",
+    "opencv-python-headless>=4.14.0.94,<4.15",
     "pydantic-settings>=2.16.0,<3",
     "uvicorn[standard]>=0.54.0,<0.55",
 ]
