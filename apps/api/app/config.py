@@ -4,7 +4,7 @@ from functools import lru_cache
 from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 APP_ID = "pehradar-api"
@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # M1c spike only: run the OpenCV/ONNX Runtime self-check at startup and log the result.
     # Startup fails if the check fails. Remove with the spike.
     cv_runtime_check: bool = False
+    # M1d spike only: mounts POST /api/v1/video/test (404 when false). Remove with the spike.
+    video_test_enabled: bool = False
+    video_test_max_mb: float = Field(default=20, gt=0)
+    video_max_seconds: float = Field(default=120, gt=0)
+    video_sample_fps: float = Field(default=2, gt=0)
 
     @property
     def cors_origin_list(self) -> list[str]:

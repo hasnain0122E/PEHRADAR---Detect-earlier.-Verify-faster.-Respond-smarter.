@@ -9,11 +9,12 @@ On the host:   set CV_RUNTIME_CHECK=true to log one summary line at startup (off
 
 import json
 from dataclasses import asdict, dataclass
-from pathlib import Path
 
 import cv2
 import numpy as np
 import onnxruntime as ort
+
+from app.detection import memory
 
 CPU_PROVIDER = "CPUExecutionProvider"
 
@@ -39,7 +40,7 @@ def check_cv_runtime() -> RuntimeReport:
     if CPU_PROVIDER not in available:
         raise RuntimeCheckError(f"{CPU_PROVIDER} missing; available: {available}")
     session_providers = _check_onnx_inference()
-    rss, peak = _memory_mb()
+    rss, peak = memory.rss_mb(), memory.peak_rss_mb()
     return RuntimeReport(
         opencv_version=cv2.__version__,
         numpy_version=np.__version__,
@@ -74,20 +75,6 @@ def _check_onnx_inference() -> list[str]:
     if not np.array_equal(y, x + x):
         raise RuntimeCheckError(f"ONNX inference returned {y!r}, expected {x + x!r}")
     return session.get_providers()
-
-
-def _memory_mb() -> tuple[float | None, float | None]:
-    """Current and peak resident memory from /proc (Linux only; None elsewhere)."""
-    try:
-        status = Path("/proc/self/status").read_text()
-    except OSError:
-        return None, None
-    values = {}
-    for line in status.splitlines():
-        key, _, rest = line.partition(":")
-        if key in ("VmRSS", "VmHWM"):
-            values[key] = round(int(rest.split()[0]) / 1024, 1)
-    return values.get("VmRSS"), values.get("VmHWM")
 
 
 # --- Minimal ONNX model, hand-encoded so the `onnx` package is not a dependency. ---

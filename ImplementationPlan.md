@@ -96,14 +96,32 @@ At M1b kickoff the user excluded OpenCV, ONNX Runtime, video processing and the 
   4. Docker.
   5. Hosted inference.
 
-**M1d: host workload spike** (after M1c, before M4)
-**Dep:** M1c.
-- A throwaway spike endpoint `POST /spike/process` (behind `APP_ENV != production` **or** removed after the spike) that decodes an uploaded clip at 2 fps on a background thread and reports duration and peak RSS.
-- Postgres (Neon) connected.
-- Record the measurements listed in `Techspec.md` §10 in `Tracker.md`.
+**M1d: video-processing feasibility spike** ← *in progress (verified locally; Render measurement pending)*
+**Dep:** M1c. The user's M1d brief says keep it small and fast:
+- **Not in scope:** detector, model, dashboard, map, notifications, incidents.
+- **No new infrastructure:** no queue or job framework, WebSockets, Docker, cloud storage or database.
+
+What M1d adds:
+- `app/detection/video.py`:
+  - opens an MP4 and reads its metadata;
+  - samples at `VIDEO_SAMPLE_FPS` (unsampled frames are only grabbed, not converted);
+  - processes frames one at a time, using one decoder thread;
+  - releases the capture when done;
+  - reports RSS before, during and after.
+- `python -m app.detection.benchmark <clip>`: a local benchmark command.
+- `POST /api/v1/video/test`: a temporary endpoint, mounted only when `VIDEO_TEST_ENABLED=true`. It processes the upload synchronously and returns the same metrics. Safeguards:
+  - Content-Length required and capped before the body is read;
+  - one request at a time;
+  - `.mp4` extension plus the MP4 file signature;
+  - the temp file is deleted afterwards.
 - **Exit:**
-  1. A deployed 60 s 720p clip decodes on a background thread. Wall time and peak RAM are recorded. A 50 MB upload succeeds, or the real limit is recorded and `MAX_UPLOAD_MB` adjusted.
-  2. Decision Q1 (host + DB) recorded. If the first host fails a criterion, the second candidate is tried within the spike timebox (½ day).
+  1. Locally: tests pass and a 60 s clip benchmark is recorded.
+  2. On Render: a 60 s clip upload succeeds, with wall time and RSS recorded.
+  3. Go/no-go is recorded with the clip, upload and sampling limits.
+  4. The endpoint flag is turned off afterwards.
+- **Moved elsewhere:**
+  - Neon/Postgres: decided only in M1d, built in M3 (see Tracker D24).
+  - Background thread: added only if Render's measurements rule out synchronous processing (D23).
 
 ### M2 — Technical spikes (time-boxed, can run in parallel with M3)
 **Dep:** M1. Each spike ≤ ½ day. If a spike overruns, the fallback is adopted and recorded.

@@ -24,6 +24,17 @@ Interactive docs (non-production only): `http://localhost:8000/api/v1/docs`.
 | `CORS_ORIGINS` | unset: `http://localhost:3000,http://127.0.0.1:3000` outside production, **none** in production | Comma-separated exact origins. Empty means no browser origins. `*` is rejected at startup. |
 | `LOG_LEVEL` | `INFO` | |
 | `CV_RUNTIME_CHECK` | `false` | M1c spike only. `true` runs the OpenCV/ONNX Runtime self-check at startup and logs one `CV runtime check OK` line. Startup fails if the check fails. |
+| `VIDEO_TEST_ENABLED` | `false` | M1d spike only. `true` mounts `POST /api/v1/video/test`. When `false`, the endpoint returns 404. |
+| `VIDEO_TEST_MAX_MB` | `20` | Upload cap. Checked against `Content-Length` before the body is read, then against the stored size. |
+| `VIDEO_MAX_SECONDS` | `120` | Longer clips get `422 VIDEO_TOO_LONG`. |
+| `VIDEO_SAMPLE_FPS` | `2` | Frames sampled per second of video |
+
+Video benchmark (M1d): `uv run python -m app.detection.benchmark clip.mp4 [--sample-fps 2] [--decode-threads 1]` prints metadata, frames decoded/sampled, wall and CPU time, and RSS before/during/after/peak.
+
+`POST /api/v1/video/test` (only when enabled):
+- Takes `multipart/form-data` with a single field `file` (an `.mp4`).
+- Returns the same metrics as JSON.
+- Errors use the `{"error":{"code","message","details"}}` format: `411 LENGTH_REQUIRED`, `413 UPLOAD_TOO_LARGE`, `415 UNSUPPORTED_MEDIA`, `409 VIDEO_TEST_BUSY`, `422 VIDEO_UNREADABLE | VIDEO_TOO_LONG | VALIDATION_ERROR`.
 
 CV runtime self-check (M1c): `uv run python -m app.detection.runtime_check` prints the OpenCV, numpy and ONNX Runtime versions and the execution providers. CPU only, no model weights.
 

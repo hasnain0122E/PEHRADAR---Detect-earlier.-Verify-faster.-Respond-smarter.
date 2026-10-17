@@ -211,7 +211,9 @@ The peak frame is annotated with boxes, class and confidence labels, the camera 
 - **Uploads:** written to `UPLOAD_DIR` with a server-generated name (never the client filename), deleted when the job ends.
 
 ### 5.2 Limits [CONFIRMED defaults, final values after M1 spike]
-`MAX_UPLOAD_MB=50`, `MAX_VIDEO_SECONDS=120`, accepted containers MP4/MOV/WebM (validated by magic bytes and `cv2.VideoCapture` open + first-frame read). The upload body is streamed to disk in chunks and aborted once it exceeds the limit.
+**M1d finding (local; Render pending):** use `MAX_UPLOAD_MB=20` rather than 50. A 60 s 720p H.264 clip at about 1.5 Mbit/s is 11 MB, and a 480p 15 fps clip is 6 MB. Demo clips should be ≤ 60 s, pre-transcoded to H.264 at ≤ 854×480 and 15 fps, because decode cost on a 0.1-CPU host scales with resolution × frame rate (see §10 Stage 3). Frames are sampled at 2 fps with a single decoder thread.
+
+Originally planned: `MAX_UPLOAD_MB=50`, `MAX_VIDEO_SECONDS=120`, accepted containers MP4/MOV/WebM (validated by magic bytes and `cv2.VideoCapture` open + first-frame read). The upload body is streamed to disk in chunks and aborted once it exceeds the limit.
 
 ### 5.3 Job runner
 - One worker thread. FIFO queue backed by `analysis_job` rows (`QUEUED`). Poll interval 0.5 s.
@@ -341,7 +343,28 @@ Default candidates: **web → Vercel**, **API → Render or Railway**, **DB → 
 - **System libraries:** none extra. Beyond their bundled libraries, the native modules link only base glibc libraries (libc, libm, libstdc++, libgcc_s, libdl, libpthread, librt) plus libz. OpenCV bundles FFmpeg (libavcodec, libavformat) for later video decode.
 - **Memory (Windows):** loading cv2 and onnxruntime adds about 35 MB to the running API, and the full self-check adds about 42 MB (43 → 85 MB). Import takes about 0.25 s. The Linux figure is measured on Render by the startup check (`VmRSS`/`VmHWM`).
 
-**Stage 3: host workload spike (M1d).** Docker is introduced only if the native runtime cannot install OpenCV/ONNX Runtime reliably. The spike must measure and record in `Tracker.md`:
+**Stage 3: video-processing feasibility (M1d) [INVESTIGATE: verified locally, Render pending].**
+
+*Local measurements, 2026-10-17 (12-thread Windows desktop; synthetic `testsrc2` H.264 clips, each 60 s; 2 fps sampling with resize to 640):*
+
+| Clip | Size | Decoder threads | Wall time | CPU time | Peak RSS (fresh process) |
+|---|---|---|---|---|---|
+| 1920×1080, 30 fps | 28.7 MB | auto / 1 | 2.7 s / 7.0 s | 20.1 s / 7.0 s | 165 / 84 MB |
+| 1280×720, 30 fps | 10.8 MB | auto / 1 | 1.2 s / 3.0 s | 8.3 s / 3.0 s | 104 / 58 MB |
+| 854×480, 15 fps | 5.7 MB | auto / 1 | 0.3 s / 1.0 s | 2.0 s / 1.0 s | 78 / 47 MB |
+| 640×360, 15 fps | 3.6 MB | auto / 1 | 0.2 s / 0.65 s | 1.1 s / 0.66 s | 68 / 44 MB |
+
+- **The whole clip is decoded, not just the sampled frames.** H.264 needs every frame to reconstruct the next, so cost is set by resolution × source frame rate, not by the 2 fps sample rate.
+- **Multi-threaded decode** cuts wall time on a many-core machine, but uses about 2.7× the CPU and twice the memory. On a 0.1-CPU host it only adds overhead, so **one decoder thread is the default.**
+- **Through the endpoint** (uvicorn in production mode, local curl upload):
+  - The 720p clip took 2.8–3.0 s.
+  - Process RSS was 63–74 MB before and after, with a peak of 95 MB.
+  - It didn't grow across 5 uploads.
+  - No temp files were left.
+- **Projection for a 0.1-CPU host (unverified):** wall time ≈ CPU time ÷ 0.1, *if* Render's core matches this desktop core. That would give about 30 s for 720p30 and about 10 s for 480p15.
+- **Inference cost is not included.** It is measured in M2-S1 once a model exists, and is likely the larger cost.
+
+**Remaining host checks (M1d on Render, then M3/M7).** Docker is introduced only if the native runtime cannot install OpenCV/ONNX Runtime reliably. Measure and record in `Tracker.md`:
 1. (Done in M1c, natively: see Stage 2.) If Docker is ever needed, the image builds with `opencv-python-headless` and `onnxruntime`. Record image size.
 2. Cold-start time and idle-sleep behaviour (a free tier may sleep, so there must be a warm-up plan before the demo).
 3. Peak RAM while processing a 60 s 720p clip (must fit the instance, e.g. 512 MB).

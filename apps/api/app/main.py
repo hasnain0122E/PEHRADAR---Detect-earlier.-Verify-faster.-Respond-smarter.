@@ -41,6 +41,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_headers=["Content-Type", "X-Operator-Key"],
     )
     app.include_router(health.router, prefix=API_PREFIX)
+    if settings.video_test_enabled:
+        # Imported lazily so OpenCV loads only when the M1d spike endpoint is enabled.
+        from app.routers import video_test
+
+        app.include_router(video_test.build_router(settings), prefix=API_PREFIX)
     return app
 
 

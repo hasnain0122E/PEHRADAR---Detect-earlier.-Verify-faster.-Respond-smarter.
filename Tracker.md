@@ -1,7 +1,7 @@
 # PehRadar — Tracker
 
 **Last updated:** 2026-10-17
-**Current milestone:** M1c — CV runtime feasibility spike (IN_PROGRESS: verified locally; awaiting the user's Render redeploy)
+**Current milestone:** M1d — Video-processing feasibility spike (IN_PROGRESS: verified locally; awaiting the user's Render test). M1c's Render evidence is collected in the same deploy.
 **Last completed:** M1b — GitHub + lightweight deployment (DONE 2026-10-17)
 **Statuses:** `TODO` · `IN_PROGRESS` · `BLOCKED` · `DONE` (DONE only with recorded verification, per `Rules.md` §8)
 
@@ -16,8 +16,9 @@
 | API deployment on Render | **DONE**: https://pehradar-detect-earlier-verify-faster.onrender.com/api/v1/health |
 | Vercel deployment | **DONE**: https://pehradar-detect-earlier-verify-fast.vercel.app/ (shows "Connected") |
 | OpenCV + ONNX Runtime (CPU) installed locally | **DONE** (M1c, 23 tests pass) |
-| OpenCV + ONNX Runtime on Render | **NOT STARTED.** Waiting for the user's redeploy and log evidence. |
-| Fire/smoke detector, model weights, video upload | **NOT STARTED** |
+| OpenCV + ONNX Runtime on Render | User reported it as "verified enough to proceed" in the M1d brief. **No Render log recorded yet**; the M1d deploy collects it. |
+| Video decode/sampling + test upload endpoint | **Local DONE** (35 tests pass). **Render NOT STARTED.** |
+| Fire/smoke detector, model weights, real upload/jobs API | **NOT STARTED** |
 
 Deployed URLs live here and in the hosts' env settings only. None is hard-coded in application code.
 
@@ -25,7 +26,7 @@ Deployed URLs live here and in the hosts' env settings only. None is hard-coded 
 
 ## Exact next task
 
-**M1c-T6 (user, manual): redeploy Render with the CV runtime** and send back the evidence listed in M1c-T6 below.
+**M1d-T6 (user, manual): one Render deploy with `CV_RUNTIME_CHECK=true` and `VIDEO_TEST_ENABLED=true`**, then the curl tests in M1d-T6 below. This also completes M1c-T6.
 
 ## Milestone summary
 
@@ -35,7 +36,7 @@ Deployed URLs live here and in the hosts' env settings only. None is hard-coded 
 | M1a Local scaffold | DONE | M0 | API + web tests, lint, typecheck, build pass; browser↔API CORS verified (see M1a below) |
 | M1b GitHub + lightweight deployment | DONE | M1a | Public health 200 with `pehradar-api`; survives redeploy; clean logs; deployed web "Connected" with restricted CORS; CI green |
 | M1c CV runtime feasibility spike | IN_PROGRESS | M1b | OpenCV headless + ONNX Runtime CPU install and run locally **and** on Render; versions, providers and RSS recorded |
-| M1d Host workload spike | TODO | M1c | 60 s clip decoded on a background thread with measurements; 50 MB upload; Neon; Q1 decided |
+| M1d Video-processing feasibility spike | IN_PROGRESS | M1c | 60 s clip uploaded and processed synchronously on Render with wall time and RSS recorded; limits and go/no-go recorded; DB decision recorded |
 | M2 Technical spikes | TODO | M1b | Q2–Q6 decided or fallback adopted, with evidence |
 | M3 Backend domain core | TODO | M1a | Migration matches Schema.md; domain unit tests cover state table + dedup table; read endpoints tested |
 | M4 Detection pipeline & jobs | TODO | M3 | AC-03, AC-04, AC-05, AC-08, AC-17 (pytest) |
@@ -109,7 +110,7 @@ Scope set by the user's M1c brief: add only `opencv-python-headless` and `onnxru
 | M1c-T3 | Runtime self-check | DONE | `app/detection/runtime_check.py`, with `tests/test_cv_runtime.py` (7 tests). It checks: cv2 import/version, numpy, cvtColor/resize/JPEG round trip, CPU provider present, and inference of an in-memory `Add` graph on `CPUExecutionProvider` only. It also asserts that no GPU provider is used. It runs at startup only with `CV_RUNTIME_CHECK=true` (default false) and logs one line. There is no endpoint. CV libraries are not imported when the flag is off (verified via `sys.modules`). |
 | M1c-T4 | Local verification | DONE | `uv sync --locked`: OK. `uv run pytest`: **23 passed**. `ruff check`: all passed. `ruff format --check`: 21 files formatted. `python -m app.detection.runtime_check`: opencv 4.14.0, numpy 2.5.3, onnxruntime 1.30.0, providers `['AzureExecutionProvider', 'CPUExecutionProvider']`, session `['CPUExecutionProvider']`. |
 | M1c-T5 | Deployment impact (measured) | DONE | Clean Linux-wheel install (no cache, `--only-binary :all:`, uv 0.12.24): **35 → 315 MB** installed, about 100 MB downloaded. Only base system libraries are needed, plus libz. Windows working set: API 43 MB, then **77 MB** with cv2+ort imported and **85 MB** after the check. Imports take about 0.25 s. Linux RSS is still to be measured on Render. Download time on this machine (home connection) was about 3.5 min and is not representative of Render. |
-| M1c-T6 | Render redeploy (user, manual) | NOT STARTED | **Next task.** Build and start commands are **unchanged**. For this deploy only, add env `CV_RUNTIME_CHECK=true`. Evidence needed: <br>(a) build log lines showing the 5 new packages installed and no "Building" lines; <br>(b) startup log line `CV runtime check OK: …` with `rss_mb`/`peak_rss_mb`; <br>(c) `curl -i …/api/v1/health` 200; <br>(d) Vercel page still "Connected"; <br>(e) build duration. |
+| M1c-T6 | Render redeploy (user, manual) | NOT STARTED | Merged into M1d-T6 (same deploy). Build and start commands are **unchanged**. For this deploy only, add env `CV_RUNTIME_CHECK=true`. Evidence needed: <br>(a) build log lines showing the 5 new packages installed and no "Building" lines; <br>(b) startup log line `CV runtime check OK: …` with `rss_mb`/`peak_rss_mb`; <br>(c) `curl -i …/api/v1/health` 200; <br>(d) Vercel page still "Connected"; <br>(e) build duration. |
 | M1c-T7 | Turn the startup check off | NOT STARTED | After T6: set `CV_RUNTIME_CHECK=false` (or delete it) on Render. The code is removed when M4 adds the real detector startup checks. |
 | M1c-T8 | Mark M1c DONE | NOT STARTED | Only after T6 and T7 pass |
 
@@ -120,14 +121,22 @@ Scope set by the user's M1c brief: add only `opencv-python-headless` and `onnxru
 4. Docker (`python:3.12-slim`, non-root) on Render.
 5. A hosted inference API, as a last resort.
 
-## M1d — Host workload spike (TODO, after M1c)
+## M1d — Video-processing feasibility spike (IN_PROGRESS)
 
-| ID | Task | Status | Notes |
+Scope set by the user's M1d brief (time-critical, keep it small):
+- **Not in scope:** detector, model, dashboard, map, notifications, incident lifecycle.
+- **No new infrastructure:** no queue or job framework, WebSockets, Docker, cloud storage or database.
+
+| ID | Task | Status | Notes / evidence |
 |---|---|---|---|
-| M1d-T1 | Spike endpoint: upload → background-thread decode @ 2 fps → duration and peak RSS (non-production only; removed after) | TODO | |
-| M1d-T2 | Record Techspec §10 measurements (cold start, RAM, 50 MB upload, background thread) | TODO | |
-| M1d-T3 | Provision Neon Postgres; connect | TODO | Can slip to M3 |
-| M1d-T4 | Record Q1 decision; Techspec §10 → CONFIRMED | TODO | |
+| M1d-T1 | Video decode/sampling utility | DONE | `app/detection/video.py`. Reads width, height, fps, frame count and duration. Samples at `VIDEO_SAMPLE_FPS` using `grab()` for every frame and `retrieve()` only for sampled ones. Frames are processed incrementally (none kept). One decoder thread. `VideoCapture` is released in `finally`. Enforces `VIDEO_MAX_SECONDS` on metadata and on real frames. 4 unit tests use an in-test 3 s generated clip, including that the file can be deleted after processing. |
+| M1d-T2 | Benchmark command | DONE | `python -m app.detection.benchmark`. Results are in Techspec §10 Stage 3 and the Verification log. |
+| M1d-T3 | `POST /api/v1/video/test` | DONE | Mounted only with `VIDEO_TEST_ENABLED=true` (404 otherwise). Behaviour: <br>• `Content-Length` required (411) and capped at `VIDEO_TEST_MAX_MB`=20 before the body is read (413). <br>• One request at a time (409). <br>• `.mp4` and the `ftyp` signature required (415). <br>• Written to a server-named temp file that is always deleted. <br>• Undecodable or too long → 422. <br>8 endpoint tests. One new dependency, `python-multipart` 0.0.32 (released 2026-06-04), which FastAPI needs to read form uploads. |
+| M1d-T4 | Sync vs background decision | DONE (provisional) | Synchronous, see D23 |
+| M1d-T5 | Database decision | DONE (recommendation) | See D24 |
+| M1d-T6 | Render test (user, manual) | NOT STARTED | **Next task.** Set `CV_RUNTIME_CHECK=true` and `VIDEO_TEST_ENABLED=true`, deploy, and run the PowerShell curl commands from the M1d report. Capture: <br>(a) the `CV runtime check OK` log line; <br>(b) the JSON from the 720p, 480p15 and 360p15 uploads; <br>(c) the 1080p → 413 response; <br>(d) Render Metrics memory and CPU graphs during the uploads; <br>(e) any `Out of memory` or `502`/`503`/timeout. |
+| M1d-T7 | Turn spike flags off | NOT STARTED | After T6, set `VIDEO_TEST_ENABLED=false` and `CV_RUNTIME_CHECK=false`. |
+| M1d-T8 | Final go/no-go, then mark M1d (and M1c) DONE | NOT STARTED | Provisional verdict is **GO WITH LIMITS** (see D25), pending Render numbers |
 
 ## M2 — Technical spikes
 
@@ -168,13 +177,17 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | D18 | M1b reduced to the lightweight deploy; OpenCV/ONNX/clip-decode/Neon moved to new M1c | CONFIRMED | User scope rule at M1b kickoff |
 | D19 | M1c limited to the CV runtime only; clip decode, upload limit, background thread, Neon and Q1 moved to new M1d | CONFIRMED | User's M1c brief |
 | D20 | `opencv-python-headless` 4.14.0.94 + `onnxruntime` 1.30.0 (CPU), installed natively on Render (no Docker) | CONFIRMED locally; Render pending | M1c-T1…T5 |
+| D22 | Decode with one FFmpeg thread (`CAP_PROP_N_THREADS=1`), sequential `grab()` and `retrieve()` only for sampled frames | CONFIRMED locally | Same decode work, about 2.7× less CPU overhead and about half the RSS of auto-threading. Verification log, 2026-10-17. |
+| D23 | Process uploads **synchronously** (upload → process → result) for the hackathon. No queue or worker. | PROVISIONAL (Render numbers pending) | Local decode of a 60 s clip takes 0.6–3 s. Revisit only if Render decode **plus** M2-S1's measured inference exceeds about 30 s for a 60 s demo clip. The fallback is the already-designed single in-process thread (Techspec §5.3), still with no framework. |
+| D24 | DB: **SQLite for local dev/tests and Neon Postgres for the deployed app, added at the start of M3** (not in M1d) | RECOMMENDED | Render's free filesystem is ephemeral (lost on redeploy/restart and on spin-down), so deployed SQLite would wipe judge-created incidents. Neon free tier needs no card, and setup is about 15 min: `DATABASE_URL` env, SQLAlchemy + Alembic (already planned, D3). Cameras and stations are re-seeded idempotently on startup. Render's own free Postgres expires after 30 days, so it is not used. |
+| D25 | M1d verdict: **GO WITH LIMITS** (provisional) | PROVISIONAL | Limits: clips ≤ 60 s, ≤ 20 MB, H.264 MP4 at ≤ 854×480 and 15 fps recommended (720p30 accepted), 2 fps sampling (1 fps fallback), synchronous. Final after Render measurement. |
 | D21 | Host runtime evidence comes from an env-gated startup log line (`CV_RUNTIME_CHECK`), not a diagnostic endpoint | CONFIRMED | Free tier has no shell. No public diagnostics. A failed check fails the deploy and Render keeps the previous one live. |
 
 ## Decisions pending
 
 | ID | Question | Resolved by | Status |
 |---|---|---|---|
-| Q1 | API host for the **heavy** workload (Render / Railway / Fly / HF Spaces) and deployed DB (Neon vs SQLite on volume). Render is the lightweight-deploy host (D16). | M1d | TODO |
+| Q1 | API host for the **heavy** workload (Render / Railway / Fly / HF Spaces) and deployed DB (Neon vs SQLite on volume). Render is the lightweight-deploy host (D16). | M1d | DB part: D24 recommends Neon in M3. Host part: pending the M1d-T6 Render numbers. |
 | Q2 | Fire/smoke model choice and licence (AGPL acceptable?) | M2-S1 | TODO |
 | Q3 | Tile source (OpenFreeMap vs MapTiler) and 3D data quality | M2-S3 | TODO |
 | Q4 | Routing provider | M2-S4 | TODO |
@@ -200,6 +213,8 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | K3 | Render free tier sleeps when idle. The first request after sleep can take tens of seconds, longer than the web client's 5 s timeout, so the status page may briefly show "Disconnected" until the next 15 s poll. | Low (expected) | OPEN. Warm up with a health request before demos. |
 | K4 | Vercel preview deployments have per-deployment origins that are not in `CORS_ORIGINS`, so previews show "Disconnected". Only the production origin is allowed. | Low (by design) | OPEN. Add specific preview origins only if needed. |
 | K5 | The API environment grew from 35 MB to 315 MB, so Render builds and cold starts will be slower. On the free tier (512 MB RAM), CV imports cost about 35–42 MB (Windows measurement). Real decode/inference memory is unmeasured until M1d. | Medium | OPEN. Measure on Render in M1c-T6 and M1d. |
+| K7 | Decode cost scales with resolution × **source** frame rate, not the sample rate, because every H.264 frame must be decoded. On a 0.1-CPU host, 720p30 could take about 30 s per 60 s clip (projection, unverified). Inference cost (M2-S1) comes on top. | Medium | OPEN. Pre-transcode demo clips to ≤ 480p 15 fps H.264, and measure on Render. |
+| K8 | Starlette spools the multipart upload to a temp file, then the endpoint copies it to its own temp file, so the upload is briefly on disk twice (≤ 40 MB at the 20 MB cap). | Low | Accepted for the spike |
 | K6 | ONNX Runtime 1.30 has no `manylinux_2_17` wheel. A host with glibc < 2.28 would fail to install it. | Low | OPEN until the Render build succeeds |
 
 ## Verification log
@@ -238,4 +253,9 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | 2026-10-17 | M1c system libraries | ELF `DT_NEEDED` of `cv2.abi3.so`, `onnxruntime_pybind11_state…so`, numpy core | Beyond bundled libraries, only base glibc libraries (libc, libm, libstdc++, libgcc_s, libdl, libpthread, librt) plus libz.so.1. No libGL/glib. |
 | 2026-10-17 | M1c memory (Windows) | `GetProcessMemoryInfo` probe | API loaded 43 MB → cv2+ort imported 77 MB (0.21–0.28 s) → after check 85 MB |
 | 2026-10-17 | M1c production-start rehearsal (local) | `APP_ENV=production CV_RUNTIME_CHECK=true uv run --no-sync uvicorn … --port 10001` | Log `CV runtime check OK: opencv=4.14.0 numpy=2.5.3 onnxruntime=1.30.0 …`, health 200. With the flag off, `cv2`/`onnxruntime` are not in `sys.modules`. |
+| 2026-10-17 | M1d test clips (not committed) | ffmpeg `testsrc2`, 60 s, libx264 | 1080p30 28.7 MB, 720p30 10.8 MB, 480p15 5.7 MB, 360p30 4.3 MB, 360p15 3.6 MB (in the session scratchpad) |
+| 2026-10-17 | M1d decode cost by threads | Probe script, fresh process per run, 2 fps sampling | Auto threads → 1 thread. 1080p: wall 2.66 → 7.04 s, CPU 20.1 → 7.0 s, peak 165 → 84 MB. 720p: wall 1.16 → 3.03 s, CPU 8.3 → 3.0 s, peak 104 → 58 MB. 480p15: CPU 2.0 → 1.0 s, peak 78 → 47 MB. 360p15: CPU 1.1 → 0.66 s, peak 68 → 44 MB. |
+| 2026-10-17 | M1d benchmark command | `python -m app.detection.benchmark <720p> --sample-fps 2` (auto threads, before D22) | 1800 decoded, 120 sampled, 1.18–1.42 s, peak 107 MB. 1 fps: 60 sampled, 1.06 s. |
+| 2026-10-17 | M1d API tests | `uv run pytest` · `ruff check .` · `ruff format --check .` | **35 passed** · all checks passed · 26 files formatted |
+| 2026-10-17 | M1d endpoint rehearsal (local) | `APP_ENV=production VIDEO_TEST_ENABLED=true uvicorn …`; `curl -F file=@…` | 720p 60 s: HTTP 200 in 2.87, 2.92 and 3.04 s (processing 2.8–3.0 s, CPU 2.8–3.2 s). 480p15: 1.02 s. 360p15: 0.63 s. RSS before 63–72 MB, during ≤ 90 MB, after 72–74 MB, process peak 95 MB, flat across 5 uploads. 1080p 30 MB → 413 `UPLOAD_TOO_LARGE`. Chunked (no Content-Length) → 411. 0 temp files left. |
 | 2026-10-17 | Independent check of Vercel page | Claude: `curl -I` | 403 with `X-Vercel-Mitigated: challenge`. Vercel bot protection blocks non-browser clients. This is not a deployment fault. |
