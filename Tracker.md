@@ -1,11 +1,11 @@
 # PehRadar — Tracker
 
 **Last updated:** 2026-10-17
-**Current milestone:** M1d — Video-processing feasibility spike (IN_PROGRESS: Render measured 2026-10-17, verdict GO WITH LIMITS. To close: one 60 s run, the `CV runtime check OK` log line, and spike flags off.)
-**Last completed:** M1b — GitHub + lightweight deployment (DONE 2026-10-17)
+**Current milestone:** M2 — Fire/smoke detection MVP (IN_PROGRESS: verified locally; Render deploy and test pending)
+**Last completed:** M1 (M1a–M1d). M1c/M1d were accepted by the user in the M2 brief ("M1 is complete"). Two evidence items were never recorded; see M1c-T6 and M1d-T6.
 **Statuses:** `TODO` · `IN_PROGRESS` · `BLOCKED` · `DONE` (DONE only with recorded verification, per `Rules.md` §8)
 
-> Only the scaffold exists, deployed: `GET /api/v1/health` and a status page. No detection, database, map, incidents or notifications have been built.
+> Built: health, the status page, and `POST /api/v1/detect/fire` (real pretrained fire/smoke model, local only so far). No database, map, incidents or notifications.
 
 | Track | Status |
 |---|---|
@@ -18,7 +18,8 @@
 | OpenCV + ONNX Runtime (CPU) installed locally | **DONE** (M1c, 23 tests pass) |
 | OpenCV + ONNX Runtime on Render | User reported it as "verified enough to proceed" in the M1d brief. **No Render log recorded yet**; the M1d deploy collects it. |
 | Video decode/sampling + test upload endpoint | **Local DONE** (35 tests pass). **Render: works** (`ef27550`). Two real 11.7 s clips processed, peak RSS 145 MB. |
-| Fire/smoke detector, model weights, real upload/jobs API | **NOT STARTED** |
+| Fire/smoke detection endpoint (M2) | **Local DONE** (76 tests pass; validation smoke test 3/4 positives, 0/4 false alarms). **Render NOT STARTED** (build command must change). |
+| Database, incidents, dashboard, map, notifications | **NOT STARTED** |
 
 Deployed URLs live here and in the hosts' env settings only. None is hard-coded in application code.
 
@@ -26,12 +27,12 @@ Deployed URLs live here and in the hosts' env settings only. None is hard-coded 
 
 ## Exact next task
 
-**Close M1c/M1d (user, about 2 min):**
-1. Upload one 60 s clip, e.g. the 480p 15 fps test clip.
-2. Copy the `CV runtime check OK` line from the Render logs.
-3. Set `VIDEO_TEST_ENABLED=false` and `CV_RUNTIME_CHECK=false`.
-
-After that: **M2-S1 (model spike)**, which must measure inference ms/frame on Render (see K9).
+**M2-T9 (user, manual): deploy M2 to Render and test it.**
+1. Change the Render **Build Command** to `uv sync --locked --no-dev && uv run --no-sync python -m app.detection.fetch_model`.
+2. Push and deploy.
+3. Check the log for `Model ready` and `Fire/smoke model loaded`.
+4. Run the PowerShell curl tests from the M2 report.
+5. Record the results in M2-T9.
 
 ## Milestone summary
 
@@ -40,9 +41,10 @@ After that: **M2-S1 (model spike)**, which must measure inference ms/frame on Re
 | M0 Foundation & docs | DONE | — | Eight docs consistent; user reviewed and started M1 (2026-10-17) |
 | M1a Local scaffold | DONE | M0 | API + web tests, lint, typecheck, build pass; browser↔API CORS verified (see M1a below) |
 | M1b GitHub + lightweight deployment | DONE | M1a | Public health 200 with `pehradar-api`; survives redeploy; clean logs; deployed web "Connected" with restricted CORS; CI green |
-| M1c CV runtime feasibility spike | IN_PROGRESS | M1b | OpenCV headless + ONNX Runtime CPU install and run locally **and** on Render; versions, providers and RSS recorded |
-| M1d Video-processing feasibility spike | IN_PROGRESS | M1c | 60 s clip uploaded and processed synchronously on Render with wall time and RSS recorded; limits and go/no-go recorded; DB decision recorded |
-| M2 Technical spikes | TODO | M1b | Q2–Q6 decided or fallback adopted, with evidence |
+| M1c CV runtime feasibility spike | DONE (user-accepted 2026-10-17) | M1b | OpenCV headless + ONNX Runtime CPU install and run locally **and** on Render; versions, providers and RSS recorded |
+| M1d Video-processing feasibility spike | DONE (user-accepted 2026-10-17) | M1c | 60 s clip uploaded and processed synchronously on Render with wall time and RSS recorded; limits and go/no-go recorded; DB decision recorded |
+| M2 Fire/smoke detection MVP (user brief; replaces spikes S-Model + S-Samples) | IN_PROGRESS | M1d | Real pretrained model behind `POST /api/v1/detect/fire`, temporal rule, evidence JPEG, tests, validation smoke test, Render memory/time measured |
+| M2-spikes (Map, Routing, Notify, Stations) | TODO | M1b | Q3–Q5 decided or fallback adopted, with evidence |
 | M3 Backend domain core | TODO | M1a | Migration matches Schema.md; domain unit tests cover state table + dedup table; read endpoints tested |
 | M4 Detection pipeline & jobs | TODO | M3 | AC-03, AC-04, AC-05, AC-08, AC-17 (pytest) |
 | M5 Review/incident/notify/ack API | TODO | M3 | AC-06, 07, 09, 10, 11, 12, 13, 18 (pytest) |
@@ -104,7 +106,7 @@ Scope set by the user at M1b kickoff: **no OpenCV, ONNX, video processing, DB, i
 
 **Deployment status:** the API (Render) and web (Vercel) are both live with the health check and status page only.
 
-## M1c — CV runtime feasibility spike (IN_PROGRESS)
+## M1c — CV runtime feasibility spike (DONE, user-accepted 2026-10-17)
 
 Scope set by the user's M1c brief: add only `opencv-python-headless` and `onnxruntime`. **No detector, weights, upload, incidents, DB, frontend, map or notifications.** The verified production flow (health check and Vercel connection) must not be disturbed.
 
@@ -126,7 +128,7 @@ Scope set by the user's M1c brief: add only `opencv-python-headless` and `onnxru
 4. Docker (`python:3.12-slim`, non-root) on Render.
 5. A hosted inference API, as a last resort.
 
-## M1d — Video-processing feasibility spike (IN_PROGRESS)
+## M1d — Video-processing feasibility spike (DONE, user-accepted 2026-10-17)
 
 Scope set by the user's M1d brief (time-critical, keep it small):
 - **Not in scope:** detector, model, dashboard, map, notifications, incident lifecycle.
@@ -159,16 +161,55 @@ Scope set by the user's M1d brief (time-critical, keep it small):
 - **Network:** request minus processing was 6.8 s for 4.2 MB and 7.3 s for 8.1 MB, so this connection uploads at about 0.6–1.1 MB/s.
 - **Memory:** 119–128 MB idle, peak **145 MB**, which leaves about **367 MB (72 %)** of 512 MB for the model. RSS before the second request (128.4) was below RSS after the first (134.7), so there's no sign of growth. Two requests are thin evidence.
 
-## M2 — Technical spikes
+## M2 — Fire/smoke detection MVP (IN_PROGRESS)
 
-| ID | Task | Status | Fallback |
+Scope set by the user's M2 brief (time-critical):
+- Prove the AI capability: MP4 → sampled frames → a real pretrained model → temporal confirmation → evidence frame → JSON result.
+- **Not in scope:** dashboard, map, Neon/DB, incident lifecycle, notifications, routing, other emergency types, multiple models, training, LLMs.
+- This replaces the planned S-Model and S-Samples spikes. The heuristic-baseline comparison is deferred (no second detector, per the brief).
+
+| ID | Task | Status | Notes / evidence |
 |---|---|---|---|
-| M2-S1 | S-Model: candidate weights, licence, ONNX, eval vs heuristic → `models/EVALUATION.md` | TODO | Heuristic baseline |
-| M2-S2 | S-Samples: ≥ 4 positive + ≥ 4 negative licensed clips, manifest, SOURCES.md | TODO | Self-recorded / synthetic |
-| M2-S3 | S-Map: tile style, Karachi z11/z15 check, building coverage notes | TODO | MapTiler; 2D only |
-| M2-S4 | S-Routing: provider, sample route, latency, policy | TODO | Straight line |
-| M2-S5 | S-Notify: one real email + one webhook to demo recipient | TODO | Webhook + console |
-| M2-S6 | S-Stations: Overpass export → `seed/stations.json` with provenance | TODO | Manual PUBLIC_WEB entries |
+| M2-T1 | Model selection | DONE | **`fiacecson20/cctv-ai-fire-smoke`** YOLOv8n, 320 px, classes fire + smoke, 12.1 MB ONNX, pinned rev `343990e`, SHA-256 `f2699b75…0c6fad`. Licence treated as **AGPL-3.0** (card says MIT; the ONNX metadata and the card's own caveat say Ultralytics AGPL-3.0). Details in `apps/api/models/README.md` and D26. |
+| M2-T2 | Model integration | DONE | `app/detection/fire_model.py`. Loads once at startup (lazy fallback); CPU provider only, 1 thread. Explicit letterbox preprocessing; contract validated at load (input [1,3,S,S], class names from metadata); output validated per frame; class-wise NMS (IoU 0.45). Configured by `MODEL_PATH` / `MODEL_SHA256`. Not committed (`*.onnx` ignored); `python -m app.detection.fetch_model` downloads and verifies it (Render build + CI). |
+| M2-T3 | Video inference pipeline | DONE | `app/detection/fire_pipeline.py`. Reuses M1d `FrameSampler` (one decode thread, 2 fps, 60 s / 20 MB caps). Frames are processed one at a time; only the best candidate frame per class is kept. |
+| M2-T4 | Evidence frame | DONE | `app/detection/evidence.py`. One annotated JPEG per detected result: boxes, labels, a `SIMULATED - PehRadar demo - operator review required` banner and a caption (model, time, type). Long side ≤ 960, quality 80, about 24 KB. UUID names, strict id regex on lookup, newest 20 kept, temp dir (ephemeral). |
+| M2-T5 | `POST /api/v1/detect/fire` + `GET /api/v1/detect/evidence/{id}.jpg` | DONE | Upload guards shared with `/video/test` (`app/routers/uploads.py`): 411/413/415/409/422. Missing or bad model → 503 `MODEL_UNAVAILABLE` (the rest of the API stays up). Inference crash → 500 `INFERENCE_FAILED`, logged server-side, no details or stack trace to the client. `/video/test` stays flag-gated. |
+| M2-T6 | Temporal confirmation | DONE | `app/domain/fire_decision.py` (pure). Per class: confirmed if score ≥ **0.45** in ≥ **3** of any **5** consecutive sampled frames (about 2.5 s at 2 fps). Single-frame rule implemented but **off** (0): nothing in the validation set justified it. All values are env-configurable. |
+| M2-T7 | Tests | DONE | **76 passed** (74 + 2 skipped when the model file is absent). Covers: preprocessing, thresholding, NMS, letterbox mapping, invalid output (shape, NaN), missing/checksum/corrupt model, decision (none, 3-of-5, flicker, inclusive threshold, single-frame, per-class), evidence selection and pruning, id validation, endpoint (detected, not detected, 503, 500 without leak, 415/422/413/too long). Unit tests use a scripted detector; 2 integration tests use the real model (contract + determinism). CI now fetches the model so they run there. |
+| M2-T8 | Validation smoke test | DONE (local) | See "M2 validation set" below. **Smoke test only, not an accuracy claim.** |
+| M2-T9 | Render deploy + measurement (user) | NOT STARTED | **Next task.** The build command changes (see Exact next task). |
+| M2-T10 | Mark M2 DONE | NOT STARTED | After T9 shows that time and memory fit |
+
+**M2 validation set** (2026-10-17; 30 s segments re-encoded to 480p 15 fps, kept in git-ignored `sample_video/m2/`):
+- **Sources:** archive.org, licences as listed: Jamestown ND fire 2005 (CC BY-NC-SA 2.5); *Structure Fire Control Tactics* 1964 (public domain mark); "Four elements: Fire" loop (CC BY 3.0); Princeton apartment fire (CC BY 2.0; footage is a logo slideshow); State Street Santa Barbara sunset (public domain); pasture sunset (CC0).
+- **Ground truth:** labels are Claude's visual inspection of the frames.
+- **Settings:** production defaults (0.45, 3-of-5, 2 fps); local Windows; `validate_clips`.
+
+| Clip | Expected | Result | Peak confidence (positive frames of 57) | Processing |
+|---|---|---|---|---|
+| pos_jamestown_fire_a (night building fire) | fire | **detected: fire** | fire 0.64 (26) | 1.96 s |
+| pos_jamestown_fire_b (night building fire) | fire | **detected: fire** | fire 0.73 (38) | 1.84 s |
+| pos_daytime_structure_smoke_bw (B&W, heavy smoke + flames) | smoke (+fire) | **detected: smoke** (fire missed) | smoke 0.93 (18); fire 0.10 | 2.11 s |
+| pos_fire_loop (glowing embers on black) | fire | **missed** | fire 0.24, smoke 0.32 | 2.11 s |
+| neg_street_sunset_traffic (street, sunset, cars, people, lamps) | none | not detected | fire 0.52 (2 frames, rule held) | 2.08 s |
+| neg_mountain_haze (B&W hazy hills, 11.9 s) | none | not detected | smoke 0.40 (0) | 0.82 s |
+| neg_pasture_sunset (13.8 s) | none | not detected | fire 0.19 | 0.83 s |
+| neg_red_logo (red/orange emblem) | none | not detected | fire 0.02 | 1.71 s |
+
+- **Threshold sensitivity on the same set:**
+  - At 0.30, the haze clip becomes a false smoke detection (12 positive frames).
+  - At 0.40, the street clip reaches 4 positive frames, but not 3 within 5, so it is still not detected.
+  - At 0.50, results are unchanged.
+- **Choice:** 0.45, the value Techspec already planned.
+
+**Local performance (Windows, 12-thread desktop, production server via curl):**
+- Inference: 23 ms per sampled frame (1 thread).
+- Processing: 1.5–1.8 s for a 30 s 480p15 clip.
+- Server peak working set: 138 MB with the model loaded.
+- Model session: about 38 MB.
+
+**Render projection (not measured):** 0.15 CPU gives about 155 ms of inference per frame. A 30 s 480p15 clip would take about 3.7 s to decode plus 57 × 0.155 ≈ 8.8 s of inference, so **≈ 13 s**. A 60 s clip would take ≈ 26 s. Linux peak memory is expected around 145 (M1d) + 38 ≈ **185 MB**, out of 512 MB.
 
 ## M3–M10
 
@@ -201,6 +242,9 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | D22 | Decode with one FFmpeg thread (`CAP_PROP_N_THREADS=1`), sequential `grab()` and `retrieve()` only for sampled frames | CONFIRMED locally | Same decode work, about 2.7× less CPU overhead and about half the RSS of auto-threading. Verification log, 2026-10-17. |
 | D23 | Process uploads **synchronously** (upload → process → result) for the hackathon. No queue or worker. | CONFIRMED for decode (Render 2026-10-17); re-check after M2-S1 inference timing | Local decode of a 60 s clip takes 0.6–3 s. Revisit only if Render decode **plus** M2-S1's measured inference exceeds about 30 s for a 60 s demo clip. The fallback is the already-designed single in-process thread (Techspec §5.3), still with no framework. |
 | D24 | DB: **SQLite for local dev/tests and Neon Postgres for the deployed app, added at the start of M3** (not in M1d) | RECOMMENDED | Render's free filesystem is ephemeral (lost on redeploy/restart and on spin-down), so deployed SQLite would wipe judge-created incidents. Neon free tier needs no card, and setup is about 15 min: `DATABASE_URL` env, SQLAlchemy + Alembic (already planned, D3). Cameras and stations are re-seeded idempotently on startup. Render's own free Postgres expires after 30 days, so it is not used. |
+| D26 | Detector: `fiacecson20/cctv-ai-fire-smoke` YOLOv8n-320 ONNX (fire, smoke), treated as AGPL-3.0, fetched at build time with a pinned revision and SHA-256 | CONFIRMED locally (M2) | Of 2–3 credible options it was the only small ONNX fire+smoke model with a stated licence: <br>• Pyronear yolo11s is Apache-2.0 but wildfire-smoke-only at 1024 px. <br>• fireviewer yolo11m is AGPL-3.0 and about 30× the compute. <br>• The Intel model is a 2B-parameter VLM, ruled out by the no-LLM rule. <br>• Others have no licence or a proprietary format. <br>23 ms/frame locally. Weak points: round-1 training (12 epochs), publisher-reported smoke recall 0.52, and an unverifiable upstream repo. |
+| D27 | Temporal rule: per class, score ≥ 0.45 in ≥ 3 of any 5 consecutive sampled frames; single-frame rule off | CONFIRMED (M2 validation smoke test) | 0.30 produced a haze false positive. 0.40 and 0.50 gave the same decisions on the set. 3-of-5 suppressed the street-lamp flickers (fire 0.52 in 2 isolated frames). |
+| D28 | Model loads once at startup. If it's missing or invalid, `/detect/fire` returns 503 and the rest of the API stays up (overrides Techspec §4.2 "startup fails loudly"). | CONFIRMED | Keeps `/health` and the Vercel status page working when the model download fails. The failure is logged at ERROR. |
 | D25 | M1d verdict: **GO WITH LIMITS** | CONFIRMED on Render data (2026-10-17) | Limits: <br>• Demo clips **≤ 30 s recommended, 60 s maximum**. <br>• **Pre-transcoded to H.264 MP4 at ≤ 854×480 and 15 fps** (`ffmpeg -i in.mp4 -vf scale=-2:480 -r 15 -c:v libx264 -an out.mp4`). <br>• Upload cap stays **20 MB**; demo files are realistically ≤ 10 MB because of upload speed. <br>• **2 fps sampling** (1 fps if inference is slow). <br>• Synchronous processing. <br>• 720p60 phone footage must be transcoded first: decode alone would be about 1.1× realtime. |
 | D21 | Host runtime evidence comes from an env-gated startup log line (`CV_RUNTIME_CHECK`), not a diagnostic endpoint | CONFIRMED | Free tier has no shell. No public diagnostics. A failed check fails the deploy and Render keeps the previous one live. |
 
@@ -209,11 +253,11 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | ID | Question | Resolved by | Status |
 |---|---|---|---|
 | Q1 | API host for the **heavy** workload (Render / Railway / Fly / HF Spaces) and deployed DB (Neon vs SQLite on volume). Render is the lightweight-deploy host (D16). | M1d | DB part: D24 recommends Neon in M3. Host part: pending the M1d-T6 Render numbers. |
-| Q2 | Fire/smoke model choice and licence (AGPL acceptable?) | M2-S1 | TODO |
+| Q2 | Fire/smoke model choice and licence (AGPL acceptable?) | M2 | DECIDED 2026-10-17: D26. AGPL-3.0 accepted for the public hackathon repo. **The user should confirm.** |
 | Q3 | Tile source (OpenFreeMap vs MapTiler) and 3D data quality | M2-S3 | TODO |
 | Q4 | Routing provider | M2-S4 | TODO |
 | Q5 | Email provider (Resend vs SMTP) and webhook demo target | M2-S5 | TODO |
-| Q6 | Sample clip sources | M2-S2 | TODO |
+| Q6 | Sample clip sources | M2 | Validation clips from archive.org (see M2). Demo clips are still to be chosen. |
 | Q7 | Hackathon deadline date, team size, whether judges use the deployed app themselves, hosting accounts available | User | TODO |
 | Q8 | Product name: "Aegis" or "PehRadar"? | User | RESOLVED 2026-10-17: **PEHRADAR** (user's M1a commit and M1b brief). Code displays "PehRadar" (`PRODUCT_NAME`); all-caps display is a one-line change if wanted. |
 
@@ -235,7 +279,11 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | K4 | Vercel preview deployments have per-deployment origins that are not in `CORS_ORIGINS`, so previews show "Disconnected". Only the production origin is allowed. | Low (by design) | OPEN. Add specific preview origins only if needed. |
 | K5 | The API environment grew from 35 MB to 315 MB, so Render builds and cold starts will be slower. On the free tier (512 MB RAM), CV imports cost about 35–42 MB (Windows measurement). Real decode/inference memory is unmeasured until M1d. | Medium | OPEN. Measure on Render in M1c-T6 and M1d. |
 | K7 | Decode cost scales with resolution × **source** frame rate, not the sample rate, because every H.264 frame must be decoded. **Measured on Render:** about 20 ns per pixel per frame at about 0.15 CPU, so 720p60 decodes at about 1.1× realtime. | Medium | MITIGATED by D25. Pre-transcode demo clips to ≤ 480p 15 fps. |
-| K9 | **Inference will likely dominate on Render.** At 0.15 CPU, every 100 ms of full-core model time becomes about 0.67 s per sampled frame. That is about 40 s for 60 sampled frames (30 s at 2 fps). This is arithmetic, not a measurement. | High | OPEN. M2-S1 must measure ms/frame on Render. Options: 1 fps sampling, smaller input (e.g. 320 px), a smaller model, or Render Starter (paid, more CPU) if the demo needs it. |
+| K9 | **Inference will likely dominate on Render.** *(M2: the chosen model is 23 ms/frame locally, which projects to about 155 ms/frame on Render. Measure in M2-T9.)* At 0.15 CPU, every 100 ms of full-core model time becomes about 0.67 s per sampled frame. That is about 40 s for 60 sampled frames (30 s at 2 fps). This is arithmetic, not a measurement. | High | OPEN. M2-S1 must measure ms/frame on Render. Options: 1 fps sampling, smaller input (e.g. 320 px), a smaller model, or Render Starter (paid, more CPU) if the demo needs it. |
+| K10 | **False negatives:** fire in grayscale or IR footage (flames missed in the B&W clip) and embers or glowing coals without flames. Weak smoke recall per the publisher (0.52). Small or distant fires below 320 px input resolution. | High | OPEN. Demo with colour daytime/night flame clips. Operator review is always required. |
+| K11 | **False positives (likely, partly observed):** street and vehicle lights at dusk reached fire 0.52 in isolated frames; haze reached smoke 0.40. Untested confusers: sodium lamps, welding, steam, dust, orange signage, fireworks, cooking fires. | Medium | OPEN. The 3-of-5 rule and the 0.45 threshold mitigate this. Build a Karachi confuser set before any accuracy claim. |
+| K12 | Model provenance: upstream training repo unreachable; dataset named only as "CC-BY 4.0"; round-1 baseline weights | Medium | OPEN. Recorded in `models/README.md`. Replace with a better-documented model if one is found. |
+| K13 | Evidence JPEGs are in a temp dir and lost on Render restart or redeploy | Low | Accepted until M3 (DB storage per Techspec) |
 | K8 | Starlette spools the multipart upload to a temp file, then the endpoint copies it to its own temp file, so the upload is briefly on disk twice (≤ 40 MB at the 20 MB cap). | Low | Accepted for the spike |
 | K6 | ONNX Runtime 1.30 has no `manylinux_2_17` wheel. A host with glibc < 2.28 would fail to install it. | Low | OPEN until the Render build succeeds |
 
@@ -281,4 +329,10 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | 2026-10-17 | M1d API tests | `uv run pytest` · `ruff check .` · `ruff format --check .` | **35 passed** · all checks passed · 26 files formatted |
 | 2026-10-17 | M1d endpoint rehearsal (local) | `APP_ENV=production VIDEO_TEST_ENABLED=true uvicorn …`; `curl -F file=@…` | 720p 60 s: HTTP 200 in 2.87, 2.92 and 3.04 s (processing 2.8–3.0 s, CPU 2.8–3.2 s). 480p15: 1.02 s. 360p15: 0.63 s. RSS before 63–72 MB, during ≤ 90 MB, after 72–74 MB, process peak 95 MB, flat across 5 uploads. 1080p 30 MB → 413 `UPLOAD_TOO_LARGE`. Chunked (no Content-Length) → 411. 0 temp files left. |
 | 2026-10-17 | M1d Render endpoint test | User: `curl.exe -F file=@…` against `…onrender.com/api/v1/video/test` (commit `ef27550`) | 540p60 11.7 s: 200, processing 7.29 s, CPU 1.10 s, peak RSS 136.7 MB. 720p60 11.7 s: 200, processing 13.30 s, CPU 1.99 s, peak RSS 144.5 MB. Effective CPU share 15.0 % for both. |
+| 2026-10-17 | M2 model download + checksum | `curl` pinned rev; `sha256sum`; later `python -m app.detection.fetch_model` | 12,139,911 B, SHA-256 `f2699b75…0c6fad`. fetch_model: 11 s download, verified; second run "already present". |
+| 2026-10-17 | M2 model contract | onnxruntime session inspection | input `images` [1,3,320,320] float; output `output0` [1,6,2100]; metadata names `{0: 'fire', 1: 'smoke'}`, licence "AGPL-3.0", Ultralytics 8.4.46 |
+| 2026-10-17 | M2 inference speed | 50 runs on a random tensor | 1 thread: 23.5 ms/frame (CPU 23.4 ms), RSS 47 → 85 MB after session load. Auto threads: 9.8 ms wall / 60 ms CPU. |
+| 2026-10-17 | M2 tests | `uv run pytest -rs` · `ruff check .` · `ruff format --check .` | **76 passed** (model present); 74 passed + 2 skipped (model absent) · all checks passed · 37 files formatted |
+| 2026-10-17 | M2 validation smoke test | `python -m app.detection.validate_clips sample_video/m2/*.mp4` (thresholds 0.30/0.40/0.45/0.50) | At 0.45: positives 3/4 detected (embers missed), negatives 0/4 false. See the M2 table. |
+| 2026-10-17 | M2 production rehearsal (local) | `APP_ENV=production uvicorn`; `curl -F file=@… /api/v1/detect/fire`; GET evidence | 200s with the expected results, 1.56–1.79 s per 30 s clip, evidence GET 200 image/jpeg 23.6 KB, log "Fire/smoke model loaded", server peak WS 137.9 MB |
 | 2026-10-17 | Independent check of Vercel page | Claude: `curl -I` | 403 with `X-Vercel-Mitigated: challenge`. Vercel bot protection blocks non-browser clients. This is not a deployment fault. |

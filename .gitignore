@@ -49,6 +49,7 @@ uploads/
 *.avi
 *.mkv
 *.onnx
+*.onnx.part
 *.pt
 *.pth
 *.safetensors

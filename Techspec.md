@@ -58,7 +58,7 @@ Each decision is tagged **[CONFIRMED]** (decided, build on it) or **[INVESTIGATE
 | Live updates | Polling (3 s dashboard, 1 s active job) | CONFIRMED | SSE; WebSockets | Polling is the simplest thing that meets NFR-02 and works behind any proxy or sleeping host. SSE is deferred until polling is shown to be insufficient. |
 | Job execution | In-process single worker thread + DB-persisted job rows | CONFIRMED | Celery/RQ + Redis; FastAPI BackgroundTasks | No extra infrastructure. A single worker bounds CPU/RAM on small instances. DB rows make progress visible and allow restart recovery. |
 | CV runtime | OpenCV (decode, sampling, drawing) + ONNX Runtime (CPU inference) | CONFIRMED | PyTorch + Ultralytics at runtime | ONNX Runtime is far smaller than PyTorch (smaller image, lower RAM, faster cold start). Training/export tooling stays off the runtime image. |
-| Detector model | Baseline heuristic + pretrained fire/smoke YOLO-family ONNX model | Baseline CONFIRMED; model INVESTIGATE (M2) | See §4.3 | See §4.3. |
+| Detector model | Pretrained fire/smoke YOLOv8n ONNX (`fiacecson20/cctv-ai-fire-smoke`, 320 px), treated as AGPL-3.0. Heuristic baseline deferred. | CONFIRMED locally (M2, Tracker D26); Render timing pending | See §4.3 | See §4.3. |
 | Map | MapLibre GL JS (via `react-map-gl/maplibre` or direct) with vector tiles; 3D via `fill-extrusion` | Library CONFIRMED; tile source INVESTIGATE (M2) | CesiumJS + Cesium ion; Google Photorealistic 3D Tiles; Leaflet | See §7. |
 | Routing | Road-network router with straight-line fallback | Fallback CONFIRMED; provider INVESTIGATE (M2) | OSRM public demo; OpenRouteService; GraphHopper; self-hosted OSRM | See §7.3. |
 | Notifications | Provider adapters: `console` (dev/test), `email`, `webhook` | Adapters CONFIRMED; email provider INVESTIGATE (M2) | Resend; SMTP (e.g. Gmail app password); SendGrid; Slack/Discord webhook | See §6. |
@@ -165,6 +165,42 @@ Candidates:
 - **C1:** heuristic baseline (always kept, used as a comparison floor).
 - **C2:** a YOLOv8n/YOLO11n-class model trained on the public **D-Fire dataset** (fire + smoke classes). Either published community weights whose source and licence can be verified, or weights we train ourselves on D-Fire in a time-boxed Colab run (≤ 2 h), which gives full provenance. **Licence note:** Ultralytics code and models are AGPL-3.0. This is acceptable for an open-source hackathon repo but must be recorded. An Apache-2.0 alternative (e.g. a YOLOX-based model) is the fallback if AGPL is unacceptable.
 - **C3:** any other verifiable pretrained fire/smoke model found during the spike, judged by the same criteria.
+
+**M2 outcome (2026-10-17).** Chosen: **C3 = `fiacecson20/cctv-ai-fire-smoke`**.
+
+| Property | Value |
+|---|---|
+| Architecture | YOLOv8n, fine-tuned on a dataset described as CC-BY 4.0 |
+| Classes | `fire`, `smoke` |
+| Input | 320×320 letterboxed RGB |
+| Output | `[1, 6, 2100]` (cx, cy, w, h + 2 sigmoid scores), no NMS inside |
+| Size | 12.1 MB ONNX, pinned HF revision + SHA-256 |
+| Speed | 23 ms/frame on 1 CPU thread locally |
+
+Provenance, licence (treated as AGPL-3.0) and the publisher's metrics are in `apps/api/models/README.md`.
+
+Against the criteria above:
+1. **Licence:** clear, but AGPL rather than permissive.
+2. **Provenance:** **partial**. The dataset is named only by licence, and the upstream repo was unreachable.
+3. **Classes:** met.
+4. **ONNX:** met.
+5. **Latency:** met. 320 px instead of 640 px, at 155 ms/frame projected on Render.
+6. **Own evaluation:** only an 8-clip **smoke test** (Tracker M2): 3/4 positives and 0/4 false alarms. It is below the ≥ 8 + 8 set and is not an accuracy figure.
+
+Rejected:
+- **Pyronear yolo11s:** Apache-2.0, but wildfire smoke only, at 1024 px.
+- **fireviewer yolo11m:** AGPL-3.0, about 30× the compute.
+- **Intel fire-and-smoke:** a 2B-parameter VLM, which is an LLM-class model.
+- **Unlicensed or proprietary-format repos.**
+
+The heuristic baseline (C1) and `models/EVALUATION.md` are deferred, because the user's M2 brief asked for one model only.
+
+**Implemented pipeline (M2):**
+- **Code:** `app/detection/fire_model.py` (pre/post-processing, class-wise NMS at IoU 0.45, contract checks), `app/domain/fire_decision.py`, `app/detection/fire_pipeline.py`, `app/detection/evidence.py`, endpoint `POST /api/v1/detect/fire`.
+- **Temporal rule:** per class, score ≥ `DETECT_CONF_THRESHOLD` (0.45) in ≥ `DETECT_MIN_POSITIVE_FRAMES` (3) of any `DETECT_WINDOW_FRAMES` (5) consecutive sampled frames. An optional single-frame rule (`DETECT_SINGLE_FRAME_CONFIDENCE`) is off.
+- **Not yet implemented:** `MIN_BOX_AREA`, event open/close/cooldown and dedup (§4.4–4.5). These arrive with incidents in M4.
+- **Model loading:** at startup. A missing model gives 503 on the endpoint instead of failing startup (Tracker D28; supersedes §4.2's "startup fails loudly").
+- **Known limitations:** Tracker K10–K12.
 
 **Evaluation set** (`models/EVALUATION.md`): ≥ 8 positive clips (fire and/or smoke) and ≥ 8 negative clips that include Karachi-relevant confusers: sunset/orange sky, sodium street lights, vehicle headlights at night, dust/haze, steam from food stalls, welding sparks. Report event-level recall on positives and false events per negative clip, for each candidate, with the date and commit. **Targets (goals, not claims):** recall ≥ 0.8, ≤ 0.5 false events per negative clip.
 
@@ -374,6 +410,14 @@ Default candidates: **web → Vercel**, **API → Render or Railway**, **DB → 
 - **Memory:** idle RSS 119–128 MB; about 367 MB of 512 MB is free.
 - **Resulting limits:** Tracker D25.
 - **Inference cost is not included.** It is measured in M2-S1 once a model exists, and is likely the larger cost.
+
+**Stage 4: model on Render (M2) [INVESTIGATE: local only so far].**
+- **Build command** becomes `uv sync --locked --no-dev && uv run --no-sync python -m app.detection.fetch_model`. It downloads the pinned 12 MB ONNX and verifies its SHA-256; the build fails on a mismatch.
+- **Projections (not yet measured on Render):**
+  - Inference: about 155 ms per sampled frame at about 0.15 CPU.
+  - A 30 s 480p15 clip: about 13 s.
+  - Memory: a peak of about 185 MB out of 512 MB.
+- **Next step:** measure on Render (Tracker M2-T9).
 
 **Remaining host checks (M1d on Render, then M3/M7).** Docker is introduced only if the native runtime cannot install OpenCV/ONNX Runtime reliably. Measure and record in `Tracker.md`:
 1. (Done in M1c, natively: see Stage 2.) If Docker is ever needed, the image builds with `opencv-python-headless` and `onnxruntime`. Record image size.

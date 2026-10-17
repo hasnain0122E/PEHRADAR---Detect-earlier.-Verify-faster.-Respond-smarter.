@@ -124,7 +124,21 @@ What M1d adds:
   - Neon/Postgres: decided only in M1d, built in M3 (see Tracker D24).
   - Background thread: added only if Render's measurements rule out synchronous processing (D23).
 
-### M2 — Technical spikes (time-boxed, can run in parallel with M3)
+### M2 — Fire/smoke detection MVP ← *in progress (local done; Render pending). User brief 2026-10-17; replaces the S-Model and S-Samples spikes below.*
+**Dep:** M1d. Proves the AI capability end to end with **one** real pretrained model:
+
+`POST /api/v1/detect/fire`: MP4 → validate → temp file → decode → sample at 2 fps → YOLOv8n ONNX (CPU) → temporal confirmation (3-of-5 at 0.45) → strongest evidence JPEG → JSON → temp file deleted.
+
+- **Not in scope:** DB, incidents, dashboard, map, notifications, routing, multiple models, training, LLMs.
+- **Model delivery:** the pinned ONNX is fetched at build time with a SHA-256 check, never committed.
+- **Exit:**
+  1. Tests pass; the 2 real-model tests run in CI.
+  2. The validation smoke test is recorded, with no accuracy claims.
+  3. On Render: the build fetches the model, and a 30 s demo clip completes with time and peak memory recorded, within the M1d limits.
+
+Remaining spikes (S-Map, S-Routing, S-Notify, S-Stations) keep the table below. S-Model and S-Samples are superseded by M2 (Tracker D26, Q6).
+
+### M2-spikes — Technical spikes (time-boxed, can run in parallel with M3)
 **Dep:** M1. Each spike ≤ ½ day. If a spike overruns, the fallback is adopted and recorded.
 | Spike | Output | Fallback if it fails |
 |---|---|---|

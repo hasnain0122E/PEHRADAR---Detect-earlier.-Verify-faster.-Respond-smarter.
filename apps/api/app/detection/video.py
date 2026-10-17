@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from app.detection import memory
 
@@ -78,14 +79,54 @@ def read_metadata(capture: cv2.VideoCapture) -> VideoMetadata:
     return VideoMetadata(width, height, round(fps, 3), frame_count, duration)
 
 
+class FrameSampler:
+    """Iterates (offset_s, frame) for sampled frames; counts every decoded frame.
+
+    Unsampled frames are only grabbed. Enforces max_seconds on real frames, because container
+    metadata can understate the length.
+    """
+
+    def __init__(
+        self,
+        capture: cv2.VideoCapture,
+        meta: VideoMetadata,
+        sample_fps: float,
+        max_seconds: float | None = None,
+    ):
+        if not sample_fps > 0:
+            raise ValueError("sample_fps must be positive")
+        if max_seconds is not None and meta.duration_s and meta.duration_s > max_seconds:
+            raise VideoTooLong(f"Video is {meta.duration_s:.1f} s; the limit is {max_seconds:g} s")
+        self._capture = capture
+        self._fps = meta.fps
+        self._step = max(1, round(meta.fps / sample_fps))
+        self._max_seconds = max_seconds
+        self._max_frames = int(max_seconds * meta.fps) + 1 if max_seconds is not None else None
+        self.frames_decoded = 0
+        self.frames_sampled = 0
+
+    def __iter__(self) -> Iterator[tuple[float, np.ndarray]]:
+        while self._capture.grab():
+            index = self.frames_decoded
+            if self._max_frames is not None and index >= self._max_frames:
+                raise VideoTooLong(f"Video exceeds the {self._max_seconds:g} s limit")
+            self.frames_decoded += 1
+            if index % self._step == 0:
+                ok, frame = self._capture.retrieve()
+                if not ok:
+                    raise VideoError(f"Frame {index} could not be decoded")
+                self.frames_sampled += 1
+                yield round(index / self._fps, 3), frame
+        if self.frames_sampled == 0:
+            raise VideoError("No frames could be decoded")
+
+
 def process_video(
     path: str | Path,
     sample_fps: float,
     max_seconds: float | None = None,
     decode_threads: int = 1,
 ) -> VideoReport:
-    if not sample_fps > 0:
-        raise ValueError("sample_fps must be positive")
     rss_before = memory.rss_mb()
     rss_max = rss_before
     started = time.perf_counter()
@@ -93,39 +134,24 @@ def process_video(
 
     with open_video(path, decode_threads) as capture:
         meta = read_metadata(capture)
-        if max_seconds is not None and meta.duration_s and meta.duration_s > max_seconds:
-            raise VideoTooLong(f"Video is {meta.duration_s:.1f} s; the limit is {max_seconds:g} s")
-        step = max(1, round(meta.fps / sample_fps))
-        max_frames = int(max_seconds * meta.fps) + 1 if max_seconds is not None else None
-        decoded = sampled = 0
-        while capture.grab():
-            if max_frames is not None and decoded >= max_frames:
-                # Container metadata understated the length; enforce the limit on real frames.
-                raise VideoTooLong(f"Video exceeds the {max_seconds:g} s limit")
-            if decoded % step == 0:
-                ok, frame = capture.retrieve()
-                if not ok:
-                    raise VideoError(f"Frame {decoded} could not be decoded")
-                _downscale(frame)
-                sampled += 1
-                if sampled % RSS_PROBE_EVERY == 0:
-                    rss_max = _max(rss_max, memory.rss_mb())
-            decoded += 1
+        sampler = FrameSampler(capture, meta, sample_fps, max_seconds)
+        for _offset, frame in sampler:
+            _downscale(frame)
+            if sampler.frames_sampled % RSS_PROBE_EVERY == 0:
+                rss_max = _max(rss_max, memory.rss_mb())
 
-    if sampled == 0:
-        raise VideoError("No frames could be decoded")
     elapsed = time.perf_counter() - started
     rss_after = memory.rss_mb()
     return VideoReport(
         metadata=meta,
         sample_fps=sample_fps,
         decode_threads=decode_threads,
-        frames_decoded=decoded,
-        frames_sampled=sampled,
-        processed_duration_s=round(decoded / meta.fps, 3),
+        frames_decoded=sampler.frames_decoded,
+        frames_sampled=sampler.frames_sampled,
+        processed_duration_s=round(sampler.frames_decoded / meta.fps, 3),
         processing_s=round(elapsed, 3),
         cpu_s=round(time.process_time() - cpu_started, 3),
-        effective_sampled_fps=round(sampled / elapsed, 2) if elapsed > 0 else 0.0,
+        effective_sampled_fps=round(sampler.frames_sampled / elapsed, 2) if elapsed > 0 else 0.0,
         rss_before_mb=rss_before,
         rss_max_during_mb=_max(rss_max, rss_after),
         rss_after_mb=rss_after,

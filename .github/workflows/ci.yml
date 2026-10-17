@@ -32,8 +32,10 @@ jobs:
         run: |
           uv run ruff check .
           uv run ruff format --check .
-      - name: Test
-        run: uv run pytest
+      - name: Fetch pinned fire/smoke model (SHA-256 verified; same step as the Render build)
+        run: uv run python -m app.detection.fetch_model
+      - name: Test (includes the real-model integration tests)
+        run: uv run pytest -rs
 
   web:
     name: Web (lint + typecheck + test + build)

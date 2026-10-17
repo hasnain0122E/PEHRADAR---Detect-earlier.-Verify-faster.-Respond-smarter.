@@ -115,7 +115,7 @@ def test_rejects_mp4_name_without_mp4_signature(upload_dir):
 
 
 def test_rejects_upload_over_limit_before_processing(clip):
-    response = post_file(video_client(video_test_max_mb=0.001), "clip.mp4", b"\x00" * 200_000)
+    response = post_file(video_client(max_upload_mb=0.001), "clip.mp4", b"\x00" * 200_000)
 
     assert response.status_code == 413
     assert response.json()["error"]["code"] == "UPLOAD_TOO_LARGE"

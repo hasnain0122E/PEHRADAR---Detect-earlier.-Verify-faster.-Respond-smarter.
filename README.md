@@ -89,7 +89,7 @@ The live URLs and verification results are recorded in `Tracker.md`. No producti
 | Repository / branch | this GitHub repo / `main` |
 | Root Directory | `apps/api` |
 | Language | Python 3 |
-| Build Command | `uv sync --locked --no-dev` |
+| Build Command | `uv sync --locked --no-dev && uv run --no-sync python -m app.detection.fetch_model` (M2: downloads the pinned 12 MB fire/smoke model and verifies its SHA-256) |
 | Start Command | `uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
 | Health Check Path | `/api/v1/health` |
 | Env `PYTHON_VERSION` | `3.12.15` (explicit, because Render's default for new services is 3.14) |
