@@ -96,7 +96,8 @@ At M1b kickoff the user excluded OpenCV, ONNX Runtime, video processing and the 
   4. Docker.
   5. Hosted inference.
 
-**M1d: video-processing feasibility spike** ← *in progress (verified locally; Render measurement pending)*
+**M1d: video-processing feasibility spike** ← *in progress (Render measured 2026-10-17: GO WITH LIMITS; closing steps in Tracker)*
+**M2-S1 addition (from M1d):** measure model inference ms/frame **on Render**, not only locally. At about 0.15 CPU, inference is the likely bottleneck (Tracker K9).
 **Dep:** M1c. The user's M1d brief says keep it small and fast:
 - **Not in scope:** detector, model, dashboard, map, notifications, incidents.
 - **No new infrastructure:** no queue or job framework, WebSockets, Docker, cloud storage or database.

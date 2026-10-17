@@ -1,7 +1,7 @@
 # PehRadar — Tracker
 
 **Last updated:** 2026-10-17
-**Current milestone:** M1d — Video-processing feasibility spike (IN_PROGRESS: verified locally; awaiting the user's Render test). M1c's Render evidence is collected in the same deploy.
+**Current milestone:** M1d — Video-processing feasibility spike (IN_PROGRESS: Render measured 2026-10-17, verdict GO WITH LIMITS. To close: one 60 s run, the `CV runtime check OK` log line, and spike flags off.)
 **Last completed:** M1b — GitHub + lightweight deployment (DONE 2026-10-17)
 **Statuses:** `TODO` · `IN_PROGRESS` · `BLOCKED` · `DONE` (DONE only with recorded verification, per `Rules.md` §8)
 
@@ -17,7 +17,7 @@
 | Vercel deployment | **DONE**: https://pehradar-detect-earlier-verify-fast.vercel.app/ (shows "Connected") |
 | OpenCV + ONNX Runtime (CPU) installed locally | **DONE** (M1c, 23 tests pass) |
 | OpenCV + ONNX Runtime on Render | User reported it as "verified enough to proceed" in the M1d brief. **No Render log recorded yet**; the M1d deploy collects it. |
-| Video decode/sampling + test upload endpoint | **Local DONE** (35 tests pass). **Render NOT STARTED.** |
+| Video decode/sampling + test upload endpoint | **Local DONE** (35 tests pass). **Render: works** (`ef27550`). Two real 11.7 s clips processed, peak RSS 145 MB. |
 | Fire/smoke detector, model weights, real upload/jobs API | **NOT STARTED** |
 
 Deployed URLs live here and in the hosts' env settings only. None is hard-coded in application code.
@@ -26,7 +26,12 @@ Deployed URLs live here and in the hosts' env settings only. None is hard-coded 
 
 ## Exact next task
 
-**M1d-T6 (user, manual): one Render deploy with `CV_RUNTIME_CHECK=true` and `VIDEO_TEST_ENABLED=true`**, then the curl tests in M1d-T6 below. This also completes M1c-T6.
+**Close M1c/M1d (user, about 2 min):**
+1. Upload one 60 s clip, e.g. the 480p 15 fps test clip.
+2. Copy the `CV runtime check OK` line from the Render logs.
+3. Set `VIDEO_TEST_ENABLED=false` and `CV_RUNTIME_CHECK=false`.
+
+After that: **M2-S1 (model spike)**, which must measure inference ms/frame on Render (see K9).
 
 ## Milestone summary
 
@@ -134,9 +139,25 @@ Scope set by the user's M1d brief (time-critical, keep it small):
 | M1d-T3 | `POST /api/v1/video/test` | DONE | Mounted only with `VIDEO_TEST_ENABLED=true` (404 otherwise). Behaviour: <br>• `Content-Length` required (411) and capped at `VIDEO_TEST_MAX_MB`=20 before the body is read (413). <br>• One request at a time (409). <br>• `.mp4` and the `ftyp` signature required (415). <br>• Written to a server-named temp file that is always deleted. <br>• Undecodable or too long → 422. <br>8 endpoint tests. One new dependency, `python-multipart` 0.0.32 (released 2026-06-04), which FastAPI needs to read form uploads. |
 | M1d-T4 | Sync vs background decision | DONE (provisional) | Synchronous, see D23 |
 | M1d-T5 | Database decision | DONE (recommendation) | See D24 |
-| M1d-T6 | Render test (user, manual) | NOT STARTED | **Next task.** Set `CV_RUNTIME_CHECK=true` and `VIDEO_TEST_ENABLED=true`, deploy, and run the PowerShell curl commands from the M1d report. Capture: <br>(a) the `CV runtime check OK` log line; <br>(b) the JSON from the 720p, 480p15 and 360p15 uploads; <br>(c) the 1080p → 413 response; <br>(d) Render Metrics memory and CPU graphs during the uploads; <br>(e) any `Out of memory` or `502`/`503`/timeout. |
+| M1d-T6 | Render test (user, manual) | DONE (partial: clips were 11.7 s, not 30–60 s) | 2026-10-17, user's PowerShell `curl.exe` against the deployed endpoint, two real stock clips (60 fps, 704 frames, 11.733 s, git-ignored in `sample_video/`): <br>• **960×540**, 4.25 MB: HTTP 200, request 14.11 s, processing **7.29 s**, CPU 1.10 s, 24 sampled, RSS before / during / after / peak **119.0 / 136.1 / 134.7 / 136.7 MB**. <br>• **1280×720**, 8.12 MB: HTTP 200, request 20.62 s, processing **13.30 s**, CPU 1.99 s, 24 sampled, RSS **128.4 / 145.4 / 142.7 / 144.5 MB**. <br>Not yet captured: the 60 s run, the 1080p → 413 check, the `CV runtime check OK` log line, and the Metrics graphs. Original plan for this task: set `CV_RUNTIME_CHECK=true` and `VIDEO_TEST_ENABLED=true`, deploy, and run the PowerShell curl commands from the M1d report. Capture: <br>(a) the `CV runtime check OK` log line; <br>(b) the JSON from the 720p, 480p15 and 360p15 uploads; <br>(c) the 1080p → 413 response; <br>(d) Render Metrics memory and CPU graphs during the uploads; <br>(e) any `Out of memory` or `502`/`503`/timeout. |
 | M1d-T7 | Turn spike flags off | NOT STARTED | After T6, set `VIDEO_TEST_ENABLED=false` and `CV_RUNTIME_CHECK=false`. |
-| M1d-T8 | Final go/no-go, then mark M1d (and M1c) DONE | NOT STARTED | Provisional verdict is **GO WITH LIMITS** (see D25), pending Render numbers |
+| M1d-T8 | Final go/no-go, then mark M1d (and M1c) DONE | IN_PROGRESS | Verdict **GO WITH LIMITS**, now based on Render data (D25). M1d is DONE after the 60 s run and T7. M1c is DONE after the log line. |
+
+**Render analysis (derived from the two runs above):**
+- **CPU share:** CPU ÷ wall = 1.095 ÷ 7.29 = **15.0 %**, and 1.993 ÷ 13.30 = **15.0 %**. The instance effectively gets about 0.15 of one core.
+- **Decode cost is linear in pixels per frame:** 10.4 ms/frame at 540p (20.0 ns/px) and 18.9 ms/frame at 720p (20.5 ns/px).
+- **Extrapolated decode time for a 60 s clip** (≈ 20 ns/px × pixels × frames; not measured):
+
+  | Clip | Decode time |
+  |---|---|
+  | 720p60 | ~68 s |
+  | 720p30 | ~34 s |
+  | 540p30 | ~19 s |
+  | 480p15 | ~7.5 s |
+  | 360p15 | ~4 s |
+
+- **Network:** request minus processing was 6.8 s for 4.2 MB and 7.3 s for 8.1 MB, so this connection uploads at about 0.6–1.1 MB/s.
+- **Memory:** 119–128 MB idle, peak **145 MB**, which leaves about **367 MB (72 %)** of 512 MB for the model. RSS before the second request (128.4) was below RSS after the first (134.7), so there's no sign of growth. Two requests are thin evidence.
 
 ## M2 — Technical spikes
 
@@ -178,9 +199,9 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | D19 | M1c limited to the CV runtime only; clip decode, upload limit, background thread, Neon and Q1 moved to new M1d | CONFIRMED | User's M1c brief |
 | D20 | `opencv-python-headless` 4.14.0.94 + `onnxruntime` 1.30.0 (CPU), installed natively on Render (no Docker) | CONFIRMED locally; Render pending | M1c-T1…T5 |
 | D22 | Decode with one FFmpeg thread (`CAP_PROP_N_THREADS=1`), sequential `grab()` and `retrieve()` only for sampled frames | CONFIRMED locally | Same decode work, about 2.7× less CPU overhead and about half the RSS of auto-threading. Verification log, 2026-10-17. |
-| D23 | Process uploads **synchronously** (upload → process → result) for the hackathon. No queue or worker. | PROVISIONAL (Render numbers pending) | Local decode of a 60 s clip takes 0.6–3 s. Revisit only if Render decode **plus** M2-S1's measured inference exceeds about 30 s for a 60 s demo clip. The fallback is the already-designed single in-process thread (Techspec §5.3), still with no framework. |
+| D23 | Process uploads **synchronously** (upload → process → result) for the hackathon. No queue or worker. | CONFIRMED for decode (Render 2026-10-17); re-check after M2-S1 inference timing | Local decode of a 60 s clip takes 0.6–3 s. Revisit only if Render decode **plus** M2-S1's measured inference exceeds about 30 s for a 60 s demo clip. The fallback is the already-designed single in-process thread (Techspec §5.3), still with no framework. |
 | D24 | DB: **SQLite for local dev/tests and Neon Postgres for the deployed app, added at the start of M3** (not in M1d) | RECOMMENDED | Render's free filesystem is ephemeral (lost on redeploy/restart and on spin-down), so deployed SQLite would wipe judge-created incidents. Neon free tier needs no card, and setup is about 15 min: `DATABASE_URL` env, SQLAlchemy + Alembic (already planned, D3). Cameras and stations are re-seeded idempotently on startup. Render's own free Postgres expires after 30 days, so it is not used. |
-| D25 | M1d verdict: **GO WITH LIMITS** (provisional) | PROVISIONAL | Limits: clips ≤ 60 s, ≤ 20 MB, H.264 MP4 at ≤ 854×480 and 15 fps recommended (720p30 accepted), 2 fps sampling (1 fps fallback), synchronous. Final after Render measurement. |
+| D25 | M1d verdict: **GO WITH LIMITS** | CONFIRMED on Render data (2026-10-17) | Limits: <br>• Demo clips **≤ 30 s recommended, 60 s maximum**. <br>• **Pre-transcoded to H.264 MP4 at ≤ 854×480 and 15 fps** (`ffmpeg -i in.mp4 -vf scale=-2:480 -r 15 -c:v libx264 -an out.mp4`). <br>• Upload cap stays **20 MB**; demo files are realistically ≤ 10 MB because of upload speed. <br>• **2 fps sampling** (1 fps if inference is slow). <br>• Synchronous processing. <br>• 720p60 phone footage must be transcoded first: decode alone would be about 1.1× realtime. |
 | D21 | Host runtime evidence comes from an env-gated startup log line (`CV_RUNTIME_CHECK`), not a diagnostic endpoint | CONFIRMED | Free tier has no shell. No public diagnostics. A failed check fails the deploy and Render keeps the previous one live. |
 
 ## Decisions pending
@@ -213,7 +234,8 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | K3 | Render free tier sleeps when idle. The first request after sleep can take tens of seconds, longer than the web client's 5 s timeout, so the status page may briefly show "Disconnected" until the next 15 s poll. | Low (expected) | OPEN. Warm up with a health request before demos. |
 | K4 | Vercel preview deployments have per-deployment origins that are not in `CORS_ORIGINS`, so previews show "Disconnected". Only the production origin is allowed. | Low (by design) | OPEN. Add specific preview origins only if needed. |
 | K5 | The API environment grew from 35 MB to 315 MB, so Render builds and cold starts will be slower. On the free tier (512 MB RAM), CV imports cost about 35–42 MB (Windows measurement). Real decode/inference memory is unmeasured until M1d. | Medium | OPEN. Measure on Render in M1c-T6 and M1d. |
-| K7 | Decode cost scales with resolution × **source** frame rate, not the sample rate, because every H.264 frame must be decoded. On a 0.1-CPU host, 720p30 could take about 30 s per 60 s clip (projection, unverified). Inference cost (M2-S1) comes on top. | Medium | OPEN. Pre-transcode demo clips to ≤ 480p 15 fps H.264, and measure on Render. |
+| K7 | Decode cost scales with resolution × **source** frame rate, not the sample rate, because every H.264 frame must be decoded. **Measured on Render:** about 20 ns per pixel per frame at about 0.15 CPU, so 720p60 decodes at about 1.1× realtime. | Medium | MITIGATED by D25. Pre-transcode demo clips to ≤ 480p 15 fps. |
+| K9 | **Inference will likely dominate on Render.** At 0.15 CPU, every 100 ms of full-core model time becomes about 0.67 s per sampled frame. That is about 40 s for 60 sampled frames (30 s at 2 fps). This is arithmetic, not a measurement. | High | OPEN. M2-S1 must measure ms/frame on Render. Options: 1 fps sampling, smaller input (e.g. 320 px), a smaller model, or Render Starter (paid, more CPU) if the demo needs it. |
 | K8 | Starlette spools the multipart upload to a temp file, then the endpoint copies it to its own temp file, so the upload is briefly on disk twice (≤ 40 MB at the 20 MB cap). | Low | Accepted for the spike |
 | K6 | ONNX Runtime 1.30 has no `manylinux_2_17` wheel. A host with glibc < 2.28 would fail to install it. | Low | OPEN until the Render build succeeds |
 
@@ -258,4 +280,5 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | 2026-10-17 | M1d benchmark command | `python -m app.detection.benchmark <720p> --sample-fps 2` (auto threads, before D22) | 1800 decoded, 120 sampled, 1.18–1.42 s, peak 107 MB. 1 fps: 60 sampled, 1.06 s. |
 | 2026-10-17 | M1d API tests | `uv run pytest` · `ruff check .` · `ruff format --check .` | **35 passed** · all checks passed · 26 files formatted |
 | 2026-10-17 | M1d endpoint rehearsal (local) | `APP_ENV=production VIDEO_TEST_ENABLED=true uvicorn …`; `curl -F file=@…` | 720p 60 s: HTTP 200 in 2.87, 2.92 and 3.04 s (processing 2.8–3.0 s, CPU 2.8–3.2 s). 480p15: 1.02 s. 360p15: 0.63 s. RSS before 63–72 MB, during ≤ 90 MB, after 72–74 MB, process peak 95 MB, flat across 5 uploads. 1080p 30 MB → 413 `UPLOAD_TOO_LARGE`. Chunked (no Content-Length) → 411. 0 temp files left. |
+| 2026-10-17 | M1d Render endpoint test | User: `curl.exe -F file=@…` against `…onrender.com/api/v1/video/test` (commit `ef27550`) | 540p60 11.7 s: 200, processing 7.29 s, CPU 1.10 s, peak RSS 136.7 MB. 720p60 11.7 s: 200, processing 13.30 s, CPU 1.99 s, peak RSS 144.5 MB. Effective CPU share 15.0 % for both. |
 | 2026-10-17 | Independent check of Vercel page | Claude: `curl -I` | 403 with `X-Vercel-Mitigated: challenge`. Vercel bot protection blocks non-browser clients. This is not a deployment fault. |

@@ -211,7 +211,7 @@ The peak frame is annotated with boxes, class and confidence labels, the camera 
 - **Uploads:** written to `UPLOAD_DIR` with a server-generated name (never the client filename), deleted when the job ends.
 
 ### 5.2 Limits [CONFIRMED defaults, final values after M1 spike]
-**M1d finding (local; Render pending):** use `MAX_UPLOAD_MB=20` rather than 50. A 60 s 720p H.264 clip at about 1.5 Mbit/s is 11 MB, and a 480p 15 fps clip is 6 MB. Demo clips should be ≤ 60 s, pre-transcoded to H.264 at ≤ 854×480 and 15 fps, because decode cost on a 0.1-CPU host scales with resolution × frame rate (see §10 Stage 3). Frames are sampled at 2 fps with a single decoder thread.
+**M1d finding (confirmed on Render 2026-10-17; see §10 Stage 3):** use `MAX_UPLOAD_MB=20` rather than 50. A 60 s 720p H.264 clip at about 1.5 Mbit/s is 11 MB, and a 480p 15 fps clip is 6 MB. Demo clips should be ≤ 60 s, pre-transcoded to H.264 at ≤ 854×480 and 15 fps, because decode cost on a 0.1-CPU host scales with resolution × frame rate (see §10 Stage 3). Frames are sampled at 2 fps with a single decoder thread.
 
 Originally planned: `MAX_UPLOAD_MB=50`, `MAX_VIDEO_SECONDS=120`, accepted containers MP4/MOV/WebM (validated by magic bytes and `cv2.VideoCapture` open + first-frame read). The upload body is streamed to disk in chunks and aborted once it exceeds the limit.
 
@@ -361,7 +361,18 @@ Default candidates: **web → Vercel**, **API → Render or Railway**, **DB → 
   - Process RSS was 63–74 MB before and after, with a peak of 95 MB.
   - It didn't grow across 5 uploads.
   - No temp files were left.
-- **Projection for a 0.1-CPU host (unverified):** wall time ≈ CPU time ÷ 0.1, *if* Render's core matches this desktop core. That would give about 30 s for 720p30 and about 10 s for 480p15.
+*Render free instance, measured 2026-10-17 (two real 60 fps stock clips, 11.7 s each, via the test endpoint):*
+
+| Clip | Size | Processing (wall) | CPU | ms/frame | Peak RSS |
+|---|---|---|---|---|---|
+| 960×540, 60 fps | 4.2 MB | 7.29 s | 1.10 s | 10.4 | 137 MB |
+| 1280×720, 60 fps | 8.1 MB | 13.30 s | 1.99 s | 18.9 | 145 MB |
+
+- **CPU share:** CPU ÷ wall = 15 % for both, so the instance gets about 0.15 core.
+- **Decode cost:** about 20 ns per pixel per frame.
+- **Extrapolated decode for a 60 s clip:** 720p30 ≈ 34 s, 480p15 ≈ 7.5 s, 360p15 ≈ 4 s.
+- **Memory:** idle RSS 119–128 MB; about 367 MB of 512 MB is free.
+- **Resulting limits:** Tracker D25.
 - **Inference cost is not included.** It is measured in M2-S1 once a model exists, and is likely the larger cost.
 
 **Remaining host checks (M1d on Render, then M3/M7).** Docker is introduced only if the native runtime cannot install OpenCV/ONNX Runtime reliably. Measure and record in `Tracker.md`:
