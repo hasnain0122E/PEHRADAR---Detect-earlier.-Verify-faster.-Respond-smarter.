@@ -6,7 +6,7 @@ PehRadar is a hackathon MVP for **fire and smoke incident detection with operato
 
 > ⚠️ **Demo system.** Cameras are simulated, notifications go to controlled test recipients, and station data is unverified. PehRadar is decision support and is **not connected to any emergency service**.
 
-**Current status:** M1a (local scaffold) is verified locally. M1b (lightweight deployment) is prepared but **not yet deployed**. Only a health endpoint and a status page exist. See [`Tracker.md`](Tracker.md).
+**Current status:** M1b is done. The API is live on Render and the web app on Vercel, and the deployed page connects to the API. Only a health endpoint and a status page exist. See [`Tracker.md`](Tracker.md).
 
 ## Architecture
 
@@ -77,9 +77,9 @@ apps/web/            Next.js frontend         (see apps/web/README.md)
 
 Planned later (not yet created): `data/sources/`, `samples/`, `models/`, `scripts/`.
 
-## Deployment (M1b: prepared, not yet deployed)
+## Deployment (M1b: deployed 2026-10-17)
 
-Real deployment results are recorded only in `Tracker.md`. No production URL is hard-coded anywhere in the code.
+The live URLs and verification results are recorded in `Tracker.md`. No production URL is hard-coded anywhere in the code.
 
 ### API on Render (native Python + uv, no Docker)
 

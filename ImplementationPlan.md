@@ -67,7 +67,7 @@ M1 was split into **M1a** (local scaffold, no heavy dependencies, as requested a
 - `apps/web`: Next.js + TS + Tailwind status page calling the health endpoint from the browser. Vitest.
 - JSON logging is deferred to M3, when there are requests worth logging.
 
-**M1b: GitHub + lightweight deployment** ← *in progress*
+**M1b: GitHub + lightweight deployment** ← *DONE 2026-10-17 (evidence in Tracker.md)*
 At M1b kickoff the user excluded OpenCV, ONNX Runtime, video processing and the DB from this milestone. M1b proves only that the existing lightweight scaffold runs in production. The heavy-dependency checks moved to **M1c**.
 **Dep:** M1a, GitHub remote, Render and Vercel accounts (user).
 - GitHub repo verified. CI workflow (ruff + pytest; lint + typecheck + vitest + build).
