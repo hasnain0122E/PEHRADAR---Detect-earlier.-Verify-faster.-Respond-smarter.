@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ApiError, getHealth } from "./client";
+import { ApiError, createOpsApi, getHealth } from "./client";
 
 const BASE = "http://api.test";
 const HEALTHY = { status: "ok", app: "pehradar-api", version: "0.1.0" };
@@ -66,5 +66,117 @@ describe("getHealth", () => {
       getHealth({ baseUrl: BASE, fetchImpl: fetchImpl as typeof fetch, timeoutMs: 20 }),
       "timeout",
     );
+  });
+});
+
+describe("createOpsApi", () => {
+  const DETECTION = "3401c1ec-0037-44d1-ba70-c441fecc422a";
+
+  it("reads lists directly from the public API", async () => {
+    const fetchImpl = vi.fn().mockImplementation(async () => jsonResponse({ items: [{ id: "c1" }] }));
+    const api = createOpsApi({ apiBaseUrl: BASE, fetchImpl });
+
+    await expect(api.listCameras()).resolves.toEqual([{ id: "c1" }]);
+    await api.listPendingDetections();
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      1,
+      `${BASE}/api/v1/cameras`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      `${BASE}/api/v1/detections?review_status=pending`,
+      expect.anything(),
+    );
+  });
+
+  it("parses the API error envelope (code, message, details)", async () => {
+    const body = {
+      error: {
+        code: "DETECTION_ALREADY_REVIEWED",
+        message: "Detection was already confirmed",
+        details: { incident_id: "i1" },
+      },
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(body, 409));
+    const api = createOpsApi({ apiBaseUrl: BASE, fetchImpl });
+
+    const err = await api.confirmDetection(DETECTION).catch((e: unknown) => e);
+    expect(err).toMatchObject({
+      kind: "http",
+      status: 409,
+      code: "DETECTION_ALREADY_REVIEWED",
+      message: "Detection was already confirmed",
+      details: { incident_id: "i1" },
+    });
+  });
+
+  it("maps 401 to an unauthorized error", async () => {
+    const body = { error: { code: "UNAUTHORIZED", message: "Missing or invalid X-Operator-Key header" } };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(body, 401));
+    const api = createOpsApi({ apiBaseUrl: BASE, fetchImpl });
+
+    await expectApiError(api.rejectDetection(DETECTION), "unauthorized");
+  });
+
+  it("sends review actions to the same-origin operator proxy without any key", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ id: "inc-1" }));
+    const api = createOpsApi({ apiBaseUrl: BASE, fetchImpl });
+
+    await api.rejectDetection(DETECTION, { note: "glare" });
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe(`/api/operator/detections/${DETECTION}/reject`);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ operator: "Duty operator (demo console)", note: "glare" });
+    expect(Object.keys(init.headers).map((h) => h.toLowerCase())).not.toContain("x-operator-key");
+  });
+
+  it("uploads footage through the proxy with real upload-progress events", async () => {
+    const sent: { url?: string; body?: FormData; headers: Record<string, string> } = { headers: {} };
+    class FakeXhr {
+      status = 200;
+      responseText = JSON.stringify({ status: "not_detected" });
+      timeout = 0;
+      upload: { onprogress?: (e: unknown) => void; onload?: () => void } = {};
+      onload?: () => void;
+      open(_method: string, url: string) {
+        sent.url = url;
+      }
+      setRequestHeader(name: string, value: string) {
+        sent.headers[name] = value;
+      }
+      send(body: FormData) {
+        sent.body = body;
+        this.upload.onprogress?.({ lengthComputable: true, loaded: 50, total: 100 });
+        this.upload.onload?.();
+        this.onload?.();
+      }
+      abort() {}
+    }
+    const progress = vi.fn();
+    const uploaded = vi.fn();
+    const api = createOpsApi({
+      apiBaseUrl: BASE,
+      xhrFactory: () => new FakeXhr() as unknown as XMLHttpRequest,
+    });
+
+    const file = new File([new Uint8Array(10)], "clip.mp4", { type: "video/mp4" });
+    await expect(
+      api.analyzeFootage("cam-1", file, { onUploadProgress: progress, onUploaded: uploaded }),
+    ).resolves.toEqual({ status: "not_detected" });
+    expect(sent.url).toBe("/api/operator/detect/fire");
+    expect(sent.body?.get("camera_id")).toBe("cam-1");
+    expect((sent.body?.get("file") as File).name).toBe("clip.mp4");
+    expect(Object.keys(sent.headers).map((h) => h.toLowerCase())).not.toContain("x-operator-key");
+    expect(progress).toHaveBeenCalledWith({ loaded: 50, total: 100 });
+    expect(uploaded).toHaveBeenCalledOnce();
+  });
+
+  it("builds absolute evidence URLs on the API origin", () => {
+    const api = createOpsApi({ apiBaseUrl: BASE });
+    expect(api.evidenceSrc("/api/v1/detections/x/evidence.jpg")).toBe(
+      `${BASE}/api/v1/detections/x/evidence.jpg`,
+    );
+    expect(api.evidenceSrc(null)).toBeNull();
   });
 });

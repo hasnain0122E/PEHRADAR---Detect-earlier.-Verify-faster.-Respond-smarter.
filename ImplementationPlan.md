@@ -179,7 +179,26 @@ Remaining spikes (S-Map, S-Routing, S-Notify, S-Stations) keep the table below. 
 - OpenAPI export script plus `gen_api_types` producing `api.gen.ts`.
 - **Exit:** migration runs on SQLite (and Postgres once M1 provides it). The domain unit tests cover every row of Appflow §3.2 and Techspec §4.5. Read endpoints have integration tests. All tests pass and the actual output is recorded.
 
-### M4 — Detection pipeline & analysis jobs
+### M4 — Fire Department command center (user brief) ← *built and verified locally 2026-10-17; Vercel deploy pending. Replaces the "M4 — Detection pipeline & analysis jobs" draft below, which moves to later work.*
+**Dep:** M3 (API contracts; Render/Neon deploy for the hosted demo).
+- **Built (apps/web):**
+  - one-screen command center: map (MapLibre 6.11.2 + OpenFreeMap dark) with camera, station and incident markers;
+  - Cameras / Review / Incidents queues;
+  - per-camera test-footage upload with staged progress;
+  - evidence review with two-step Confirm / Reject;
+  - negative-result view;
+  - incident detail with candidate station and timeline;
+  - alert strip and opt-in Web Audio chime;
+  - a typed `OpsApi` client;
+  - a **server-side operator proxy** so `OPERATOR_API_KEY` never reaches the browser.
+- **Not in scope:** notifications, acknowledgement, PATCH status UI, routing, auth, police/ambulance, model changes, extra pages.
+- **Exit:**
+  1. Vitest, lint, typecheck and build pass.
+  2. Backend tests still pass.
+  3. Local end-to-end in a real browser (positive → confirm, negative, smoke → reject) works through the proxy.
+  4. On Vercel + Render: the same flow works and the key is absent from the browser bundle.
+
+### M4 (draft v0.1) — Detection pipeline & analysis jobs
 **Dep:** M3. (S-Model is **not** required. The heuristic unblocks it.)
 - Video validation, sampling, `HeuristicDetector`, `aggregation`, evidence rendering, job runner with startup recovery, `POST /cameras/{id}/analysis-jobs`, `GET /analysis-jobs/{id}`, detection list/detail/evidence endpoints, dedup applied at persist time.
 - `OnnxYoloDetector` added when S-Model delivers weights (can land after VS1).

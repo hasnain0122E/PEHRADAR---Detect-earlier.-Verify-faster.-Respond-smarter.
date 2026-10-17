@@ -46,3 +46,278 @@ body {
     transition: none !important;
   }
 }
+
+/* ---------- Operations map markers (Design.md §7.2). Shape + glyph per state, not colour alone. */
+
+.pr-marker {
+  /* MapLibre positions markers absolutely; do not override position here. */
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  /* ≥ 32 px hit target */
+  min-width: 32px;
+  min-height: 32px;
+}
+.pr-marker:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Camera: rounded square, dashed violet outline = simulated */
+.pr-marker-camera > svg {
+  box-sizing: content-box;
+  padding: 3px;
+  border-radius: 5px;
+  border: 1.5px dashed var(--color-sim);
+  background: var(--color-ink-800);
+  color: var(--color-ink-100);
+}
+.pr-marker-camera.is-inactive {
+  opacity: 0.4;
+}
+.pr-marker-camera.is-pending > svg {
+  background: var(--color-review);
+  color: var(--color-ink-950);
+  border-style: solid;
+  border-color: var(--color-ink-950);
+}
+.pr-marker-camera.is-selected > svg {
+  box-shadow:
+    0 0 0 2px var(--color-ink-950),
+    0 0 0 4px var(--color-focus);
+}
+.pr-marker-camera.is-analyzing::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--color-notified);
+  border-right-color: var(--color-notified);
+  animation: pr-spin 1.5s linear infinite;
+}
+.pr-badge {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 4px;
+  background: var(--color-ink-950);
+  color: var(--color-review);
+  border: 1px solid var(--color-review);
+  font: 600 10px/14px var(--font-mono);
+}
+.pr-dot {
+  position: absolute;
+  bottom: 2px;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  background: var(--color-sev-high);
+  border: 1.5px solid var(--color-ink-950);
+}
+.pr-label {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 1px;
+  padding: 1px 5px;
+  white-space: nowrap;
+  border-radius: 3px;
+  background: var(--color-ink-900);
+  border: 1px solid var(--color-ink-700);
+  color: var(--color-ink-100);
+  font: 500 11px/15px var(--font-sans);
+}
+.pr-marker-camera.is-selected .pr-label,
+.pr-marker-camera:hover .pr-label,
+.pr-marker-camera.is-pending .pr-label {
+  display: block;
+}
+
+/* Fire station: shield. Unavailable = dashed + ×. Candidate = filled blue. */
+.pr-shield {
+  fill: var(--color-ink-900);
+  stroke: var(--color-ink-100);
+  stroke-width: 1.8;
+}
+.pr-marker-station.is-unavailable .pr-shield {
+  stroke: var(--color-ink-500);
+  stroke-dasharray: 3 2;
+}
+.pr-x {
+  position: absolute;
+  color: var(--color-ink-300);
+  font: 700 13px/1 var(--font-sans);
+}
+.pr-marker-station.is-candidate .pr-shield {
+  fill: var(--color-notified);
+  stroke: var(--color-ink-100);
+}
+.pr-marker-station.is-selected .pr-shield {
+  stroke: var(--color-focus);
+  stroke-width: 2.6;
+}
+
+/* Incident: diamond with severity glyph; pulse while active. */
+.pr-diamond {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  transform: rotate(45deg);
+  border: 2px solid var(--color-ink-950);
+  border-radius: 3px;
+}
+.pr-diamond > span {
+  transform: rotate(-45deg);
+  color: var(--color-ink-950);
+  font: 700 11px/1 var(--font-sans);
+}
+.sev-high .pr-diamond {
+  background: var(--color-sev-high);
+}
+.sev-medium .pr-diamond {
+  background: var(--color-sev-medium);
+}
+.sev-low .pr-diamond {
+  background: var(--color-sev-low);
+}
+.pr-marker-incident:not(.is-closed)::before {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  border: 2px solid var(--color-sev-high);
+  animation: pr-pulse 2s ease-out infinite;
+}
+.pr-marker-incident.is-closed .pr-diamond {
+  background: var(--color-resolved);
+}
+.pr-marker-incident.is-selected .pr-diamond {
+  box-shadow:
+    0 0 0 2px var(--color-ink-950),
+    0 0 0 4px var(--color-focus);
+  scale: 1.15;
+}
+
+.ops-map.hide-cameras .pr-marker-camera,
+.ops-map.hide-stations .pr-marker-station,
+.ops-map.hide-incidents .pr-marker-incident {
+  display: none;
+}
+
+/* Legend swatches reuse the marker vocabulary. */
+.legend-camera {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px dashed var(--color-sim);
+  background: var(--color-ink-800);
+}
+.legend-camera.is-pending {
+  background: var(--color-review);
+  border: 1.5px solid var(--color-ink-950);
+}
+.legend-shield {
+  width: 13px;
+  height: 15px;
+  clip-path: polygon(50% 0, 100% 15%, 100% 55%, 50% 100%, 0 55%, 0 15%);
+  background: var(--color-ink-100);
+}
+.legend-shield.is-unavailable {
+  background: var(--color-ink-500);
+}
+.legend-shield.is-candidate {
+  background: var(--color-notified);
+}
+.legend-diamond {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  background: var(--color-sev-high);
+  color: var(--color-ink-950);
+  font-size: 8px;
+}
+
+@keyframes pr-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pr-pulse {
+  from {
+    transform: scale(0.8);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+/* MapLibre controls in the dark theme */
+.maplibregl-ctrl-group {
+  background: var(--color-ink-900) !important;
+  border: 1px solid var(--color-ink-700);
+}
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--color-ink-700) !important;
+}
+.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  filter: invert(1);
+}
+.maplibregl-ctrl-attrib {
+  background: rgb(16 21 28 / 0.85) !important;
+  color: var(--color-ink-300);
+}
+.maplibregl-ctrl-attrib,
+.maplibregl-ctrl-attrib a {
+  color: var(--color-ink-300) !important;
+}
+
+/* New-alert flash (disabled with reduced motion by the rule above) */
+@keyframes pr-flash {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  30% {
+    background-color: rgb(255 176 32 / 0.18);
+  }
+}
+.pr-flash {
+  animation: pr-flash 1.2s ease-out 2;
+}
+
+/* Indeterminate bar for server-side analysis (no fabricated percentage). */
+@keyframes pr-indeterminate {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.pr-indeterminate {
+  position: relative;
+  display: block;
+}
+.pr-indeterminate::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 33%;
+  background: var(--color-notified);
+  animation: pr-indeterminate 1.4s ease-in-out infinite;
+}

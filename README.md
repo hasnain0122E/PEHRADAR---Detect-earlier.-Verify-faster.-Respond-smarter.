@@ -6,13 +6,18 @@ PehRadar is a hackathon MVP for **fire and smoke incident detection with operato
 
 > ⚠️ **Demo system.** Cameras are simulated, notifications go to controlled test recipients, and station data is unverified. PehRadar is decision support and is **not connected to any emergency service**.
 
-**Current status:** M1b is done. The API is live on Render and the web app on Vercel, and the deployed page connects to the API. Only a health endpoint and a status page exist. See [`Tracker.md`](Tracker.md).
+**Current status:**
+- M2 fire/smoke detection is live on Render.
+- M3 (database and incident workflow) and M4 (the command-center dashboard) are built and tested locally. Their Neon, Render and Vercel deploys are pending.
+
+See [`Tracker.md`](Tracker.md).
 
 ## Architecture
 
 ```
 apps/web  (Next.js 16, TypeScript, Tailwind 4)  ──HTTPS/JSON──▶  apps/api  (FastAPI, Python 3.12)
-   browser calls the API directly                                 REST under /api/v1, CORS allowlist
+   browser reads the API directly                                 REST under /api/v1, CORS allowlist
+   operator writes go via /api/operator/* (server adds the key)
 ```
 
 | Document | Purpose |
@@ -114,5 +119,6 @@ The live URLs and verification results are recorded in `Tracker.md`. No producti
 | Build / Install / Output | defaults (`next build`, npm with `package-lock.json`) |
 | Node.js | 24.x (from `engines.node: ">=22"`) |
 | Env `NEXT_PUBLIC_API_BASE_URL` | `https://<service>.onrender.com`, set **before** the first build |
+| Env `OPERATOR_API_KEY` | M4: the same value as on Render. **Server-only**: not `NEXT_PUBLIC_`. Mark it Sensitive. Used by the `/api/operator/*` proxy. |
 
 `NEXT_PUBLIC_API_BASE_URL` is inlined at build time, so changing it requires a redeploy. After Vercel assigns its domain, set `CORS_ORIGINS=https://<your-vercel-domain>` on Render. Vercel preview deployments use different origins and will show "Disconnected" unless their origin is added too.

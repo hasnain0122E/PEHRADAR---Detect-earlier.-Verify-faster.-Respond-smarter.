@@ -1,10 +1,23 @@
-export type ApiErrorKind = "network" | "timeout" | "http" | "invalid_response";
+import type {
+  Camera,
+  Detection,
+  DetectionResult,
+  FireStation,
+  Incident,
+  IncidentDetail,
+  ReviewInput,
+} from "./types";
+
+export type ApiErrorKind = "network" | "timeout" | "http" | "unauthorized" | "invalid_response";
 
 export class ApiError extends Error {
   constructor(
     readonly kind: ApiErrorKind,
     message: string,
     readonly status?: number,
+    /** Backend error code from the `{"error":{code,message,details}}` envelope, when present. */
+    readonly code?: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ApiError";
@@ -24,19 +37,67 @@ export interface ApiClientOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 5000;
+/** Reads tolerate a Render free-tier cold start (Tracker K3). */
+const READ_TIMEOUT_MS = 30_000;
+/** Upload + inference: ~15–20 s on Render, plus a possible cold start. */
+const ANALYZE_TIMEOUT_MS = 180_000;
+const WRITE_TIMEOUT_MS = 60_000;
 
-async function getJson(path: string, options: ApiClientOptions, signal?: AbortSignal) {
-  const { baseUrl, timeoutMs = DEFAULT_TIMEOUT_MS, fetchImpl = fetch } = options;
+/** Same-origin Next.js route that adds the operator key on the server (app/api/operator). */
+export const OPERATOR_PROXY_PATH = "/api/operator";
+/** Default label written to the incident timeline for actions taken from this console. */
+export const OPERATOR_LABEL = "Duty operator (demo console)";
+
+interface RequestOptions extends ApiClientOptions {
+  method?: "GET" | "POST";
+  body?: BodyInit;
+  contentType?: string;
+}
+
+function errorFromBody(status: number, body: unknown): ApiError {
+  const envelope = (body as { error?: { code?: unknown; message?: unknown; details?: unknown } })
+    ?.error;
+  const code = typeof envelope?.code === "string" ? envelope.code : undefined;
+  const message =
+    typeof envelope?.message === "string" ? envelope.message : `API returned HTTP ${status}`;
+  const details =
+    envelope?.details && typeof envelope.details === "object"
+      ? (envelope.details as Record<string, unknown>)
+      : undefined;
+  return new ApiError(status === 401 ? "unauthorized" : "http", message, status, code, details);
+}
+
+function parseBody(status: number, text: string): unknown {
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    if (status >= 200 && status < 300) {
+      throw new ApiError("invalid_response", "API returned a non-JSON response");
+    }
+    throw new ApiError("http", `API returned HTTP ${status}`, status);
+  }
+  if (status < 200 || status >= 300) throw errorFromBody(status, body);
+  return body;
+}
+
+async function requestJson(path: string, options: RequestOptions, signal?: AbortSignal) {
+  const {
+    baseUrl,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    fetchImpl = fetch,
+    method = "GET",
+    body,
+    contentType,
+  } = options;
   const timeout = AbortSignal.timeout(timeoutMs);
   const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (contentType) headers["Content-Type"] = contentType;
 
   let response: Response;
   try {
-    response = await fetchImpl(`${baseUrl}${path}`, {
-      method: "GET",
-      headers: { Accept: "application/json" },
-      signal: combined,
-    });
+    response = await fetchImpl(`${baseUrl}${path}`, { method, headers, body, signal: combined });
   } catch (err) {
     if (signal?.aborted) throw err;
     if (timeout.aborted) {
@@ -44,15 +105,13 @@ async function getJson(path: string, options: ApiClientOptions, signal?: AbortSi
     }
     throw new ApiError("network", "Cannot reach the API (offline, wrong URL, or CORS blocked)");
   }
-
-  if (!response.ok) {
-    throw new ApiError("http", `API returned HTTP ${response.status}`, response.status);
-  }
+  let text: string;
   try {
-    return (await response.json()) as unknown;
+    text = await response.text();
   } catch {
-    throw new ApiError("invalid_response", "API returned a non-JSON response");
+    throw new ApiError("invalid_response", "API response could not be read");
   }
+  return parseBody(response.status, text);
 }
 
 function isHealthResponse(value: unknown): value is HealthResponse {
@@ -65,9 +124,156 @@ export async function getHealth(
   options: ApiClientOptions,
   signal?: AbortSignal,
 ): Promise<HealthResponse> {
-  const body = await getJson("/api/v1/health", options, signal);
+  const body = await requestJson("/api/v1/health", options, signal);
   if (!isHealthResponse(body)) {
     throw new ApiError("invalid_response", "Health response did not match the expected shape");
   }
   return body;
+}
+
+function items<T>(body: unknown, what: string): T[] {
+  const list = (body as { items?: unknown })?.items;
+  if (!Array.isArray(list)) {
+    throw new ApiError("invalid_response", `${what} response did not contain an items list`);
+  }
+  return list as T[];
+}
+
+function object<T>(body: unknown, what: string): T {
+  if (typeof body !== "object" || body === null || typeof (body as { id?: unknown }).id !== "string")
+    throw new ApiError("invalid_response", `${what} response did not match the expected shape`);
+  return body as T;
+}
+
+export interface UploadProgress {
+  loaded: number;
+  total: number;
+}
+
+export interface AnalyzeOptions {
+  onUploadProgress?: (progress: UploadProgress) => void;
+  /** Called once the file has been fully sent, i.e. server-side analysis has started. */
+  onUploaded?: () => void;
+  signal?: AbortSignal;
+}
+
+/** Every call the command center makes. Components receive this, never raw fetch. */
+export interface OpsApi {
+  listCameras(signal?: AbortSignal): Promise<Camera[]>;
+  listStations(signal?: AbortSignal): Promise<FireStation[]>;
+  listIncidents(signal?: AbortSignal): Promise<Incident[]>;
+  getIncident(id: string, signal?: AbortSignal): Promise<IncidentDetail>;
+  listPendingDetections(signal?: AbortSignal): Promise<Detection[]>;
+  getDetection(id: string, signal?: AbortSignal): Promise<Detection>;
+  analyzeFootage(cameraId: string, file: File, options?: AnalyzeOptions): Promise<DetectionResult>;
+  confirmDetection(id: string, input?: ReviewInput): Promise<IncidentDetail>;
+  rejectDetection(id: string, input?: ReviewInput): Promise<Detection>;
+  /** Absolute URL for an API-relative evidence path (images load directly from the API). */
+  evidenceSrc(path: string | null): string | null;
+}
+
+export interface OpsApiConfig {
+  /** Public API origin (NEXT_PUBLIC_API_BASE_URL) for reads and evidence images. */
+  apiBaseUrl: string;
+  /** Origin of the operator proxy; "" means this web app (same origin). */
+  proxyBaseUrl?: string;
+  fetchImpl?: typeof fetch;
+  xhrFactory?: () => XMLHttpRequest;
+}
+
+/** multipart upload with real upload-progress events (fetch cannot report upload progress). */
+function uploadForm(
+  url: string,
+  form: FormData,
+  options: AnalyzeOptions,
+  xhrFactory: () => XMLHttpRequest,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const xhr = xhrFactory();
+    xhr.open("POST", url);
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.timeout = ANALYZE_TIMEOUT_MS;
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) {
+        options.onUploadProgress?.({ loaded: event.loaded, total: event.total });
+      }
+    };
+    xhr.upload.onload = () => options.onUploaded?.();
+    xhr.onload = () => {
+      try {
+        resolve(parseBody(xhr.status, xhr.responseText));
+      } catch (err) {
+        reject(err);
+      }
+    };
+    xhr.onerror = () =>
+      reject(new ApiError("network", "Upload failed: the web server could not be reached"));
+    xhr.ontimeout = () =>
+      reject(
+        new ApiError("timeout", `Analysis did not finish within ${ANALYZE_TIMEOUT_MS / 1000}s`),
+      );
+    xhr.onabort = () => reject(new DOMException("Upload cancelled", "AbortError"));
+    options.signal?.addEventListener("abort", () => xhr.abort(), { once: true });
+    xhr.send(form);
+  });
+}
+
+export function createOpsApi(config: OpsApiConfig): OpsApi {
+  const { apiBaseUrl, proxyBaseUrl = "", fetchImpl } = config;
+  const xhrFactory = config.xhrFactory ?? (() => new XMLHttpRequest());
+  const read = { baseUrl: apiBaseUrl, fetchImpl, timeoutMs: READ_TIMEOUT_MS };
+  const proxy = `${proxyBaseUrl}${OPERATOR_PROXY_PATH}`;
+
+  const review = (id: string, action: "confirm" | "reject", input: ReviewInput = {}) =>
+    requestJson(
+      `${OPERATOR_PROXY_PATH}/detections/${encodeURIComponent(id)}/${action}`,
+      {
+        baseUrl: proxyBaseUrl,
+        fetchImpl,
+        timeoutMs: WRITE_TIMEOUT_MS,
+        method: "POST",
+        body: JSON.stringify({ operator: OPERATOR_LABEL, ...input }),
+        contentType: "application/json",
+      },
+    );
+
+  return {
+    listCameras: async (signal) =>
+      items<Camera>(await requestJson("/api/v1/cameras", read, signal), "Cameras"),
+    listStations: async (signal) =>
+      items<FireStation>(await requestJson("/api/v1/fire-stations", read, signal), "Stations"),
+    listIncidents: async (signal) =>
+      items<Incident>(await requestJson("/api/v1/incidents", read, signal), "Incidents"),
+    getIncident: async (id, signal) =>
+      object<IncidentDetail>(
+        await requestJson(`/api/v1/incidents/${encodeURIComponent(id)}`, read, signal),
+        "Incident",
+      ),
+    listPendingDetections: async (signal) =>
+      items<Detection>(
+        await requestJson("/api/v1/detections?review_status=pending", read, signal),
+        "Detections",
+      ),
+    getDetection: async (id, signal) =>
+      object<Detection>(
+        await requestJson(`/api/v1/detections/${encodeURIComponent(id)}`, read, signal),
+        "Detection",
+      ),
+    analyzeFootage: async (cameraId, file, options = {}) => {
+      const form = new FormData();
+      form.append("camera_id", cameraId);
+      form.append("file", file, file.name);
+      const body = await uploadForm(`${proxy}/detect/fire`, form, options, xhrFactory);
+      const status = (body as { status?: unknown })?.status;
+      if (status !== "detected" && status !== "not_detected") {
+        throw new ApiError("invalid_response", "Detection response did not match the contract");
+      }
+      return body as DetectionResult;
+    },
+    confirmDetection: async (id, input) =>
+      object<IncidentDetail>(await review(id, "confirm", input), "Incident"),
+    rejectDetection: async (id, input) =>
+      object<Detection>(await review(id, "reject", input), "Detection"),
+    evidenceSrc: (path) => (path ? `${apiBaseUrl}${path}` : null),
+  };
 }

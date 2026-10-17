@@ -7,6 +7,26 @@ What we deliberately avoid: gradient hero cards, KPI tiles with sparklines, glas
 
 ---
 
+## 0. M4 implementation status (2026-10-17)
+
+The M4 command center (`apps/web`, user brief) implements the core of this spec on one screen. Where it differs from the target below, the M4 behaviour is:
+
+| Area | Implemented in M4 | Differs from the target spec |
+|---|---|---|
+| Layout | Demo banner, top bar, left rail, map, context panel, slim footer. Rail 300 px / panel 400 px; 340 / 460 px at ≥ 1536 px. | Below 1024 px the three areas become tabs (Queues / Map / Details), not drawers or a bottom sheet. Panel is not resizable. |
+| Rail | Three tabs: **Cameras** (search), **Review** (pending detections), **Incidents** (active first, then severity, then newest; closed ones below a divider). | Adds a Cameras tab. No escalation pinning (no dedup yet). |
+| Top bar | Wordmark, "Karachi Fire Department · Command Center", tagline, operational-state chip, API pill with retry, last sync (PKT), alert-sound toggle. | No operator-label menu or access-key dialog: the operator key stays server-side (Tracker D36). |
+| Map | MapLibre GL JS 6.11.2, OpenFreeMap **dark** style (no API key). Fits all cameras and stations on load. Selecting an item eases to it; an incident is framed together with its candidate station. Layer toggles (cameras / stations / incidents) and a legend. | No 3D, no routes, no history layer toggle (closed incidents show only while selected). |
+| Markers | Camera: dashed violet rounded square with a camera glyph. Pending detections: amber fill + count badge. Active incident: red corner diamond. Analysing: rotating ring. Selected: focus ring + label. Station: shield. Unavailable: dashed outline + ×. Candidate: filled blue. Incident: diamond with ▲/◆/● glyph and a pulse ring; closed incidents grey. | As §7.2. Markers are HTML elements, so hit targets are ≥ 32 px and each has an `aria-label`. |
+| Camera panel | Details, a file picker for a local MP4 (client checks: `.mp4`, video/mp4, ≤ 4 MB), staged progress. | No sample selector, video player or job list (no analysis jobs yet). |
+| Progress | **Uploading** shows the real upload percentage (XHR progress). The server steps (analyzing frames → temporal consistency → evidence) share one indeterminate bar, an elapsed-seconds counter and a note that the server reports no partial progress. | Overrides §13 "never an indeterminate spinner for jobs": the synchronous API gives no progress numbers, and inventing them is not allowed. |
+| Evidence review | Header, evidence image (opens full size), class chips, large peak confidence, strongest-frame offset, positive / sampled frames, decision rule, camera location, model, processing time, per-class result, decision-support line. Reject / Confirm, sticky. | Two-step inline confirmation instead of dialogs. No severity picker (severity is set by the API rule on confirmation). No keyboard shortcuts except `Esc`. |
+| Negative result | "No persistent fire or smoke event detected." plus a not-a-safety-confirmation line, frames analysed, processing time, peak model confidence, and **Analyze another clip**. | New in M4. |
+| Incident panel | Event, severity, status, simulated badge, location, evidence, confidence, confirmation time/operator, candidate station (OSM · UNVERIFIED badge, straight-line km, demo-availability note) and the fixed line "Candidate station based on geographic proximity. Not a dispatch confirmation." Timeline: only events that happened, colour rule + label + actor + elapsed chips. | No notify, acknowledge or resolve actions (M5). |
+| Alerts | A new pending detection or confirmed incident (seen in the 10 s poll, or the operator's own positive result) adds an amber alert strip with **Review now / Open incident** (`aria-live="assertive"`), up to 3 stacked. The rail's Review badge pulses. | Audio follows §12: off by default, **Enable alert sound** creates the Web Audio context on that click and plays a test chime. Rate limited to 1 per 3 s. No volume slider. |
+
+Lucide is not installed; the few icons are inline SVG or text glyphs.
+
 ## 1. Layout
 
 Desktop-first (operators sit at a workstation). Target ≥ 1280 × 720. Optimised for 1920 × 1080.

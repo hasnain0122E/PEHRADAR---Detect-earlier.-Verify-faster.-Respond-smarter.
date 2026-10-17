@@ -1,6 +1,6 @@
 # PehRadar — Application Flows
 
-**Status:** Draft v0.1 (M0). Defines the intended behaviour. Endpoint names match `Techspec.md` §3.1. Enum values match `Schema.md` §3.
+**Status:** Draft v0.1 (M0); §1.1 (M4 UI), §3.1, §3.2 and §5 (M3) describe implemented behaviour. Defines the intended behaviour. Endpoint names match `Techspec.md` §3.1. Enum values match `Schema.md` §3.
 
 ---
 
@@ -22,6 +22,21 @@
 | 12 | (Recipient) opens the ack link on phone | `GET /ack/{token}` | Ack page: TEST banner, incident summary (no evidence image), **Acknowledge** button. |
 | 13 | (Recipient) presses **Acknowledge** | `POST /ack/{token}` | Recipient sees confirmation. Within ≤ 3 s the operator sees notification `ACKNOWLEDGED` and incident `ACKNOWLEDGED`. |
 | 14 | Presses **Resolve**, picks code (e.g. `HANDLED`) and note | `POST /incidents/{id}/resolve` | Incident `RESOLVED`. Marker moves to the history layer (hidden by default). Timeline complete. |
+
+### 1.1 M4 command-center flow (implemented 2026-10-17; replaces rows 1–8 above until jobs and notifications exist)
+
+| # | Operator action | System behaviour | UI result |
+|---|---|---|---|
+| 1 | Opens the dashboard | Browser calls `GET /cameras`, `/fire-stations`, `/incidents`, `/detections?review_status=pending` directly on the API, then polls incidents and pending detections every 10 s. | Demo banner, map fitted to all cameras and stations, Cameras tab, overview panel with counts. |
+| 2 | Clicks a camera (map or list) | — | Map eases to it. Panel: camera details (SIMULATED) and **Analyze test footage**. |
+| 3 | Chooses a local MP4 and presses **Analyze test footage** | Client checks `.mp4`, type and ≤ 4 MB. The browser posts `multipart(camera_id, file)` to `/api/operator/detect/fire` on the web app. The Next.js route adds `X-Operator-Key` and forwards to `POST /api/v1/detect/fire`. | Stage list: Uploading (real %), then server steps with an indeterminate bar and elapsed seconds. Camera marker shows the analysing ring. |
+| 4a | Result `detected` | API stores a **pending** `DetectionEvent`. The web fetches `GET /detections/{id}`. | Alert strip "Possible FIRE detected at …". Review tab. Evidence review panel opens. Camera marker turns amber with a badge. |
+| 4b | Result `not_detected` | Nothing stored. | "No persistent fire or smoke event detected." with frames, processing time, peak confidence, and **Analyze another clip**. |
+| 5 | **Confirm incident**, then **Yes, confirm incident** | `POST /api/operator/detections/{id}/confirm` → API creates the incident, severity, timeline and nearest available station. Buttons are disabled while it runs, so a second click does nothing. | Incidents tab. Incident panel with a success line ("Candidate station: … km straight-line. No dispatch was sent."). The map frames the incident and the candidate station. |
+| 5′ | **Reject detection**, optional reason, **Yes, reject detection** | `POST /api/operator/detections/{id}/reject {note}`. No incident. | "Detection rejected. No incident was created." Badge cleared. |
+| 6 | Opens an incident from the queue or map | `GET /incidents/{id}`. Reloaded when the polled list shows a newer `updated_at`. | Incident detail and timeline (only events that exist). |
+
+Errors: network/5xx on load → red banner with Retry (stale-data note after a later failed poll). Upload or review failures show inline with the API message. `409 DETECTION_ALREADY_REVIEWED` explains that another console reviewed it and links the incident. `401` names the server-side key.
 
 ## 2. Alternate and error flows
 

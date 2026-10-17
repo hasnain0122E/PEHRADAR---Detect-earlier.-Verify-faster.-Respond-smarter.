@@ -1,11 +1,16 @@
 # PehRadar — Tracker
 
 **Last updated:** 2026-10-17
-**Current milestone:** M3 — Operational backend + persistent incident workflow (IN_PROGRESS: built and tested locally; Neon + Render deploy pending)
+**Current milestone:** M4 — Fire Department command center (IN_PROGRESS: built and verified locally; Vercel deploy pending). M3 is still IN_PROGRESS: code committed (`45558c3`), but no Neon/Render evidence has been recorded yet.
 **Last completed:** M2 — Fire/smoke detection MVP (DONE, verified on Render 2026-10-17; frozen per the user's M3 brief). Before that: M1 (M1a–M1d). M1c/M1d were accepted by the user in the M2 brief ("M1 is complete"). Two evidence items were never recorded; see M1c-T6 and M1d-T6.
 **Statuses:** `TODO` · `IN_PROGRESS` · `BLOCKED` · `DONE` (DONE only with recorded verification, per `Rules.md` §8)
 
-> Built and deployed: health, the status page, and `POST /api/v1/detect/fire` (real pretrained fire/smoke model, live on Render). No database, map, incidents or notifications.
+> **Deployed:** health and `POST /api/v1/detect/fire` (live on Render).
+> **Built and verified locally, not yet deployed:**
+> - the M3 database and incident API;
+> - the M4 command-center dashboard (map, queues, upload, review, incidents).
+>
+> **Not built:** notifications and routing.
 
 | Track | Status |
 |---|---|
@@ -20,7 +25,8 @@
 | Video decode/sampling + test upload endpoint | **Local DONE** (35 tests pass). **Render: works** (`ef27550`). Two real 11.7 s clips processed, peak RSS 145 MB. |
 | Fire/smoke detection endpoint (M2) | **DONE on Render** (`b63863e`, CI green). Three 30 s clips: same decisions as locally, 12.8–14.8 s processing, peak RSS ≤ 178.5 MB. |
 | Database + operational API (M3) | **Local DONE** (109 tests; end-to-end rehearsal on SQLite with the real model). **Neon NOT CONNECTED**; Render not yet redeployed. |
-| Dashboard, map, notifications, routing | **NOT STARTED** |
+| Command-center dashboard + map (M4) | **Local DONE** (48 web tests; real-browser end-to-end against the local API with the real model). **Vercel NOT redeployed.** |
+| Notifications, acknowledgement, routing | **NOT STARTED** |
 
 Deployed URLs live here and in the hosts' env settings only. None is hard-coded in application code.
 
@@ -28,7 +34,10 @@ Deployed URLs live here and in the hosts' env settings only. None is hard-coded 
 
 ## Exact next task
 
-**M3-T10 (user, manual): create the Neon database, set the Render env vars and start command, deploy, and verify persistence.** Steps are in the M3 report and `apps/api/README.md`.
+1. **M3-T10/T11 (user):** Neon + Render deploy and the persistence check (steps in the M3 report), if not done yet.
+2. **M4-T13 (user):** on Vercel, set `OPERATOR_API_KEY` (server-only, same value as Render), redeploy, and run the browser flow (steps in the M4 report).
+
+M4 is marked DONE only after step 2's evidence is recorded.
 
 Still open: Q2 (AGPL acceptance) and the demo clip choice.
 
@@ -44,7 +53,7 @@ Still open: Q2 (AGPL acceptance) and the demo clip choice.
 | M2 Fire/smoke detection MVP (user brief; replaces spikes S-Model + S-Samples) | DONE (2026-10-17) | M1d | Real pretrained model behind `POST /api/v1/detect/fire`, temporal rule, evidence JPEG, tests, validation smoke test, Render memory/time measured |
 | M2-spikes (Map, Routing, Notify, Stations) | TODO | M1b | Q3–Q5 decided or fallback adopted, with evidence |
 | M3 Operational backend + persistent incidents (user brief) | IN_PROGRESS | M2 | Neon persistence, cameras/stations API, pending detections, confirm/reject, nearest available station, incident state machine + timeline; survives Render restart |
-| M4 Detection pipeline & jobs | TODO | M3 | AC-03, AC-04, AC-05, AC-08, AC-17 (pytest) |
+| M4 Fire Department command center (user brief; replaces the jobs draft) | IN_PROGRESS | M3 | One-screen dashboard: map, cameras, stations, incidents, upload → review → confirm/reject → incident with candidate station and timeline; operator key server-side; tests/lint/typecheck/build pass; works on Vercel |
 | M5 Review/incident/notify/ack API | TODO | M3 | AC-06, 07, 09, 10, 11, 12, 13, 18 (pytest) |
 | M6 Frontend vertical slice | TODO | M3 | VS1 script passes locally (manual), Vitest passes |
 | M7 VS1 integration + deploy ★ | TODO | M4, M5, M6 | AC-01, 02, 04, 06, 07, 09, 10, 12, 13, 15, 16; Playwright passes |
@@ -266,9 +275,69 @@ Unit tests use a scripted detector; the 2 real-model tests from M2 are unchanged
 - PATCH notified → acknowledged → resolved, then notified → `INVALID_STATE_TRANSITION`. Timeline: 6 events in order.
 - No errors in the server log.
 
+## M4 — Fire Department command center (IN_PROGRESS)
+
+Scope set by the user's M4 brief:
+- **Not in scope:** police, ambulance, auth, admin, analytics, notifications, acknowledgement workflow, road routing, backend redesign, model tuning, extra pages, chatbot.
+- No backend code changed.
+
+| ID | Task | Status | Notes / evidence |
+|---|---|---|---|
+| M4-T1 | Application shell | DONE | Demo banner, top bar (wordmark, Fire Department context, tagline, operational-state chip, API pill + retry, last sync PKT, sound toggle), footer. Replaces the M1 status page. |
+| M4-T2 | Karachi map | DONE | MapLibre GL JS **6.11.2** (2026-09-24; 6.12+ too new), OpenFreeMap dark style. Coordinates come only from the API. Camera, station and incident markers each have distinct shapes and states. |
+| M4-T3 | Camera list | DONE | `GET /cameras`; name, location, code, status, SIMULATED badge, search; click selects and centres the marker and opens the camera panel. |
+| M4-T4 | Fire stations | DONE | `GET /fire-stations`; map shields (available / unavailable ×); station panel with OSM link, licence and an unverified disclaimer. |
+| M4-T5 | Incident queue | DONE | `GET /incidents`; active first, then severity, then newest; type, severity glyph, location, status, time, candidate station. |
+| M4-T6 | Video analysis flow | DONE | File picker with client checks (.mp4, video/mp4, ≤ 4 MB); posts `camera_id + file` through the server proxy. |
+| M4-T7 | Processing experience | DONE | Real upload %. The server steps share one indeterminate bar plus elapsed seconds. No invented percentage. |
+| M4-T8 | Detection review | DONE | Evidence image, event chips, confidence, strongest-frame offset, positive/sampled frames, rule, location, model, per-class result, disclaimer. Two-step Confirm / Reject; buttons disabled while submitting. Refresh after the action. |
+| M4-T9 | Negative result | DONE | "No persistent fire or smoke event detected." plus a no-safety-claim line, frames, time, peak confidence, and Analyze another clip. |
+| M4-T10 | Incident detail | DONE | Type, severity, status, camera, confidence, evidence, candidate station + straight-line km + fixed "Candidate station based on geographic proximity. Not a dispatch confirmation."; timeline of the events that exist. |
+| M4-T11 | Alerts | DONE | Amber alert strip (assertive live region) for new pending detections and incidents; Review badge pulse; opt-in Web Audio chime (no autoplay). |
+| M4-T12 | API client, security, responsive, demo labels, tests, docs | DONE | `OpsApi` (`lib/api/client.ts`) with typed responses and error kinds. Server-only proxy `app/api/operator/[...path]`. Below 1024 px the areas become Queues/Map/Details tabs. 48 Vitest tests. Docs updated. |
+| M4-T13 | Vercel deploy + browser check (user) | NOT STARTED | **Next task.** Needs `OPERATOR_API_KEY` on Vercel and the M3 Render deploy. |
+| M4-T14 | Mark M4 DONE | NOT STARTED | After T13 |
+
+**Tests (2026-10-17):**
+- `npm test`: **48 passed** (7 files: 9 kept from M1 + 39 new).
+- `npm run lint`, `npm run typecheck` and `npm run build` are clean.
+- Backend regression: `uv run pytest` **109 passed**; ruff check and format are clean.
+
+The new frontend tests cover:
+- the command center rendering API data;
+- camera selection;
+- client-side clip validation;
+- positive result → review;
+- negative result;
+- confirm (single submission);
+- reject;
+- 409 already-reviewed;
+- incident selection and timeline;
+- load error + retry;
+- upload 401;
+- the API client (envelope parsing, proxy paths, XHR upload progress);
+- the proxy (key added, allowlist, cross-origin 403, 413, 502/503, key never echoed);
+- the secret boundary (only `lib/server` reads the key; no `NEXT_PUBLIC_*KEY`; no client import of server code);
+- the marker model;
+- display rules.
+
+**Local end-to-end** (2026-10-17). Setup: API on uvicorn with a fresh SQLite DB, the seed, the real model and `OPERATOR_API_KEY` set. Web on `next start` with the same key. Headless Chrome driven over CDP.
+- Proxy with curl: an unknown path gave 404 `NOT_FOUND`. `Origin: https://evil.example` gave 403. A direct API write without the key gave 401. The fire clip through the proxy came back `detected fire 0.7274 pending`.
+- Browser: Korangi pending detection → review panel → Confirm → **Landhi Fire Station 7.63 km** with the 3-event timeline. The map framed the incident and the station.
+- Browser: Lyari + street clip → negative (57 frames, peak 0.52).
+- Browser: Clifton + smoke clip → alert "Possible SMOKE…", 0.93, 18 of 57 frames → Reject → "Detection rejected. No incident was created." The API showed the detection `rejected` by "Duty operator (demo console)", with the incident count unchanged at 1.
+- Screenshots were checked at 1440×900, 1366×768 and 820×900.
+- A build with `OPERATOR_API_KEY=SENTINEL-…` had **0** hits for the value in `.next/static`. The only hit was in `.next/cache` (Turbopack's local build cache, not served). The variable *name* appears in the bundle once, in an error message.
+
+**Bugs found and fixed during verification:**
+1. Map container height collapsed because MapLibre's CSS sets `position: relative`. Fixed by sizing it from an absolute wrapper.
+2. Markers stacked in normal flow because assigning `className` removed `maplibregl-marker`. Fixed by keeping MapLibre's classes.
+3. `.pr-marker { position: relative }` overrode marker positioning. Removed.
+4. The camera list overflowed (grid min-width). Fixed with `grid-cols-1`.
+
 ## M4–M10
 
-The tasks are defined in `ImplementationPlan.md` §2. They will be broken into tracked tasks here when each milestone starts, so this list does not go stale. All are **TODO**.
+M4 above follows the user's brief. The remaining planned milestones (jobs, notifications/ack, routing, polish, hardening) are defined in `ImplementationPlan.md` §2. They will be broken into tracked tasks here when each milestone starts, so this list does not go stale. All are **TODO**.
 
 ## Decisions
 
@@ -306,6 +375,11 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | D32 | Migrations + seed run in the Render **start** command | CONFIRMED (pending deploy) | The free tier has no pre-deploy hook; both are idempotent; a failure keeps the old deploy live |
 | D33 | One shared `OPERATOR_API_KEY` for writes; reads public; production without a key refuses writes (503) | CONFIRMED (M3) | A public URL must not allow anonymous incident creation. Reads are simulated/public data. Real operator accounts are later work. |
 | D34 | Fire stations from OSM (5 public KMC stations), unverified, availability as a demo flag | CONFIRMED | Overpass export 2026-10-17. Institutional brigades (CAA, AKU) and mis-tagged features were excluded. |
+| D35 | Map: MapLibre GL JS **6.11.2** + OpenFreeMap "dark" style (free, no key, OSM data). The worker is copied to `public/vendor` at build time (`scripts/copy-maplibre-worker.mjs`). | CONFIRMED locally (M4) | Matches D8. Leaflet was not needed. OpenFreeMap needs no account. MapLibre 6 resolves its worker at runtime, which Turbopack cannot see. Answers the tile part of Q3. |
+| D36 | Operator writes go through a same-origin Next.js route handler (`/api/operator/*`) that adds `X-Operator-Key` from the server-only `OPERATOR_API_KEY`. Only three actions are allowlisted; cross-origin requests get 403. Reads go browser → API directly. | CONFIRMED (M4) | User brief: the key must never reach the browser. This is the smallest server boundary and needs no backend change. |
+| D37 | UI clip limit **4 MB** (API limit 20 MB) | CONFIRMED | Vercel Functions accept request bodies up to 4.5 MB. The M2 demo clips are 0.1–2.1 MB. |
+| D38 | Poll incidents and pending detections every **10 s** (D5 said 3 s) | CONFIRMED | Two light GETs per 10 s keep load low on Render's free tier. The operator's own actions refresh immediately. |
+| D39 | Two-step inline Confirm / Reject instead of dialogs; no severity picker | CONFIRMED | The brief requires no accidental repeat actions. Severity is the API's deterministic rule (M3), so the UI does not duplicate it. |
 | D25 | M1d verdict: **GO WITH LIMITS** | CONFIRMED on Render data (2026-10-17) | Limits: <br>• Demo clips **≤ 30 s recommended, 60 s maximum**. <br>• **Pre-transcoded to H.264 MP4 at ≤ 854×480 and 15 fps** (`ffmpeg -i in.mp4 -vf scale=-2:480 -r 15 -c:v libx264 -an out.mp4`). <br>• Upload cap stays **20 MB**; demo files are realistically ≤ 10 MB because of upload speed. <br>• **2 fps sampling** (1 fps if inference is slow). <br>• Synchronous processing. <br>• 720p60 phone footage must be transcoded first: decode alone would be about 1.1× realtime. |
 | D21 | Host runtime evidence comes from an env-gated startup log line (`CV_RUNTIME_CHECK`), not a diagnostic endpoint | CONFIRMED | Free tier has no shell. No public diagnostics. A failed check fails the deploy and Render keeps the previous one live. |
 
@@ -315,7 +389,7 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 |---|---|---|---|
 | Q1 | API host for the **heavy** workload (Render / Railway / Fly / HF Spaces) and deployed DB (Neon vs SQLite on volume). Render is the lightweight-deploy host (D16). | M1d | DB part: D24 recommends Neon in M3. Host part: pending the M1d-T6 Render numbers. |
 | Q2 | Fire/smoke model choice and licence (AGPL acceptable?) | M2 | DECIDED 2026-10-17: D26. AGPL-3.0 accepted for the public hackathon repo. **The user should confirm.** |
-| Q3 | Tile source (OpenFreeMap vs MapTiler) and 3D data quality | M2-S3 | TODO |
+| Q3 | Tile source (OpenFreeMap vs MapTiler) and 3D data quality | M2-S3 | Tile source DECIDED (D35: OpenFreeMap dark). 3D not evaluated (not in M4). |
 | Q4 | Routing provider | M2-S4 | TODO |
 | Q5 | Email provider (Resend vs SMTP) and webhook demo target | M2-S5 | TODO |
 | Q6 | Sample clip sources | M2 | Validation clips from archive.org (see M2). Demo clips are still to be chosen. |
@@ -348,6 +422,11 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | K14 | Each confirmed detection opens its own incident: no dedup or attach-to-open-incident per camera yet (Appflow §2.2 / AC-18 planned) | Medium | OPEN. Fine for the demo; add before multi-clip demos on one camera. |
 | K15 | Reads (cameras, stations, detections, incidents, evidence) are public | Low | Accepted for a simulated demo. Revisit before any real data. |
 | K16 | The PostgreSQL migration has only been compiled, not executed; the first real run is on Neon | Medium | OPEN until M3-T10 |
+| K17 | No operator login (out of M4 scope). The key is hidden, but anyone who can open the dashboard URL can analyze, confirm or reject through the proxy. Cross-site posts are blocked (Origin check). | Medium | OPEN. Acceptable for a simulated demo; add auth before any real use. |
+| K18 | The proxy sets `maxDuration = 150` s. That needs Vercel Fluid compute (default for new projects). Without it the Hobby limit is 60 s, and a cold Render start plus a 15–20 s analysis could hit a 504. | Medium | OPEN until M4-T13. Warm the API before a demo by opening `/api/v1/health`. |
+| K19 | OpenFreeMap is a free community service with no SLA. If the style fails, the map shows "Map tiles unavailable" and markers still render on a plain background. | Low | OPEN |
+| K20 | Visual checks were done in headless Chrome with SwiftShader at 1440/1366/820 px. No physical-device or other-browser pass yet. | Low | OPEN until the user's M4-T13 check |
+| K21 | The Turbopack build cache (`.next/cache`) keeps build-time env values locally. It is git-ignored and never served, and the browser bundle is clean. | Low | Accepted. Delete `.next` before sharing a machine's build folder. |
 | K8 | Starlette spools the multipart upload to a temp file, then the endpoint copies it to its own temp file, so the upload is briefly on disk twice (≤ 40 MB at the 20 MB cap). | Low | Accepted for the spike |
 | K6 | ONNX Runtime 1.30 has no `manylinux_2_17` wheel. A host with glibc < 2.28 would fail to install it. | Low | OPEN until the Render build succeeds |
 
@@ -405,4 +484,10 @@ The tasks are defined in `ImplementationPlan.md` §2. They will be broken into t
 | 2026-10-17 | M3 OSM station export | Overpass API, `amenity=fire_station` in the Karachi bbox | 15 features (OSM base 2026-10-17T17:18Z); 5 public KMC stations seeded |
 | 2026-10-17 | M3 tests | `uv run pytest -rs` · `ruff check .` · `ruff format --check .` | **109 passed** · all checks passed · 49 files formatted |
 | 2026-10-17 | M3 end-to-end rehearsal (local SQLite, real model) | alembic upgrade + seed ×2 + uvicorn + curl flow | See the M3 section: pending detection → confirm → Landhi 7.63 km → notified/acknowledged/resolved; 409/401 guards; 6-event timeline |
+| 2026-10-17 | M4 dependency | `npm install --save-exact --before=2026-10-03 maplibre-gl@6.11.2` | maplibre-gl 6.11.2 (published 2026-09-24) |
+| 2026-10-17 | M4 web checks | `npm test` · `npm run lint` · `npm run typecheck` · `npm run build` (after `rm -rf .next`) | **48 passed** (7 files) · clean · OK · compiled; routes `/` (static) and `/api/operator/[...path]` (dynamic) |
+| 2026-10-17 | M4 backend regression | `uv run pytest` · `ruff check .` · `ruff format --check .` | **109 passed** · all checks passed · 49 files formatted |
+| 2026-10-17 | M4 secret check | Build with `OPERATOR_API_KEY=SENTINEL-…`; `grep -rl` in `.next/static` | 0 files contain the value (1 hit in the local `.next/cache` only) |
+| 2026-10-17 | M4 proxy check (local) | curl against `next start` + uvicorn (key set on both) | Unknown path 404; foreign Origin 403; direct API write without key 401; detect via proxy → `detected fire 0.7274 pending` |
+| 2026-10-17 | M4 browser end-to-end (local) | Headless Chrome over CDP: confirm, negative and reject flows; screenshots at 1440×900, 1366×768, 820×900 | All three flows behaved as specified (details in the M4 section) |
 | 2026-10-17 | Independent check of Vercel page | Claude: `curl -I` | 403 with `X-Vercel-Mitigated: challenge`. Vercel bot protection blocks non-browser clients. This is not a deployment fault. |
