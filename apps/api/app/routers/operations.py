@@ -1,6 +1,7 @@
 """Operational API (M3): cameras, fire stations, detection review, incidents.
 
 Reads are public (demo data, simulated cameras). Writes need X-Operator-Key (routers.security).
+M5: confirmation also stores a suggested road route (app.routing) with a straight-line fallback.
 """
 
 from typing import Literal
@@ -16,6 +17,7 @@ from app.models import Camera, DetectionEvent, FireStation, Incident
 from app.routers.security import operator_error
 from app.routers.serializers import camera_json, detection_json, incident_json, station_json
 from app.routers.uploads import error_response
+from app.routing import RouteProvider
 from app.services import operations
 from app.services.operations import OperationError
 
@@ -64,7 +66,7 @@ def _incident_response(session: Session, incident_id: str) -> dict:
     )
 
 
-def build_router(settings: Settings) -> APIRouter:
+def build_router(settings: Settings, route_provider: RouteProvider | None = None) -> APIRouter:
     router = APIRouter()
 
     # --- cameras and stations ---
@@ -136,6 +138,11 @@ def build_router(settings: Settings) -> APIRouter:
             incident = operations.confirm_detection(session, detection_id, body.operator, body.note)
         except OperationError as exc:
             return error_response(exc.status, exc.code, exc.message, **exc.details)
+        try:
+            # After the incident is committed: a routing problem can never undo the confirmation.
+            operations.attach_route(session, incident.id, route_provider)
+        except OperationError:
+            session.rollback()
         return _incident_response(session, incident.id)
 
     @router.post("/detections/{detection_id}/reject")

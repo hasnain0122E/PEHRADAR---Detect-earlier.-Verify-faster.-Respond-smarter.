@@ -17,6 +17,9 @@ def make_settings(**overrides) -> Settings:
     # _env_file=None keeps a developer's local .env from leaking into tests.
     if overrides.get("app_env") == "production":
         overrides.setdefault("database_url", UNUSED_PG_URL)
+    # Tests never call the public OSRM server or start the scenario worker thread.
+    overrides.setdefault("routing_provider", "none")
+    overrides.setdefault("scenario_worker", False)
     return Settings(_env_file=None, **overrides)
 
 
@@ -25,7 +28,7 @@ def client() -> TestClient:
     return TestClient(create_app(make_settings(app_env="test", cors_origins=WEB_ORIGIN)))
 
 
-def make_db_app(tmp_path, models=None, seeded: bool = True, **overrides):
+def make_db_app(tmp_path, models=None, seeded: bool = True, app_kwargs=None, **overrides):
     """App on a fresh SQLite file with tables created (and the Karachi seed loaded)."""
     settings = make_settings(
         app_env="test",
@@ -34,7 +37,7 @@ def make_db_app(tmp_path, models=None, seeded: bool = True, **overrides):
         evidence_dir=str(tmp_path / "evidence"),
         **overrides,
     )
-    app = create_app(settings, models=models)
+    app = create_app(settings, models=models, **(app_kwargs or {}))
     Base.metadata.create_all(app.state.engine)
     if seeded:
         with app.state.sessionmaker() as session:

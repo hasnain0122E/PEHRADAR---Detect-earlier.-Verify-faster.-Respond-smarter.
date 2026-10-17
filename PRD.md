@@ -2,11 +2,26 @@
 
 **Tagline:** Detect earlier. Verify faster. Respond smarter.
 **Scope of this version:** Fire/smoke incident detection and operator-assisted response, Karachi, Pakistan. Hackathon MVP.
-**Status:** Draft v0.1 (foundation milestone M0). Nothing in this document is implemented yet — see `Tracker.md` for real status.
+**Status:** Draft v0.1 (M0), with the M5 scope update in §0. See `Tracker.md` for real status.
 
 Related documents: `Techspec.md` (how), `Appflow.md` (flows and state machines), `Design.md` (UI), `Schema.md` (data), `ImplementationPlan.md` (milestones and risk register), `Tracker.md` (status), `Rules.md` (engineering rules).
 
 ---
+
+## 0. M5 scope update: city intelligence upgrade (2026-10-17)
+
+The user's M5 brief widened the demo from a manual upload console to a city-scale monitoring product. What changed in scope, and the data-integrity rules that come with it:
+
+- **Monitoring network:** 179 nodes across 23 Karachi districts and corridors. **No official, Safe City (SSCA) or other government CCTV is connected.** Every node declares its provenance:
+  - `simulated_coverage` (175): deterministic placeholder points on mapped major roads, where PehRadar *could* monitor once authorised CCTV is integrated. Not cameras.
+  - `demo_stream` (3): simulated nodes that loop licensed sample footage (`apps/api/demo_assets/SOURCES.md`). None of it was recorded in Karachi.
+  - `verified_mapped` (1): a camera location mapped in OpenStreetMap. Location only; no feed access.
+  - `public_live` (0): no lawful, stable public Karachi stream was found. The feed abstraction supports HLS/MJPEG for when one is.
+- **Fire-response facilities:** 11 real OpenStreetMap facilities (target was 20–30). No station was invented to reach a number. Availability stays a demo flag.
+- **Automated demo scenarios:** a scenario plays a licensed clip on a demo-stream node and runs it through the **real** detector after a delay. A confirmed result becomes an ordinary pending detection with real confidence and evidence. **Nothing is auto-confirmed**; the operator still confirms or rejects. Three scenarios: Korangi fire, Clifton smoke, and Lyari sunset glare (a false-alarm lookalike that the temporal rule correctly does not confirm). Manual upload remains as a diagnostic fallback.
+- **Suggested response route:** after confirmation, a road route from the candidate station (still chosen by straight-line proximity) to the incident, from OSRM on OpenStreetMap roads. It is an **estimate** (free-flow, no traffic) and never a dispatch. If routing fails, the incident keeps the straight-line distance.
+- **3D map, clustering, feed viewer, city status bar and activity feed** in the command center.
+- **Still out of scope:** police, ambulance, authentication, LLMs, notifications and acknowledgement automation.
 
 ## 1. Problem statement
 

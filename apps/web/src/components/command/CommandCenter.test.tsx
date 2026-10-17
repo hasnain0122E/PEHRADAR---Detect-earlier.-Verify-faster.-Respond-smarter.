@@ -11,6 +11,10 @@ import {
   INCIDENT_DETAIL,
   NEGATIVE_RESULT,
   POSITIVE_RESULT,
+  ROUTE_OK,
+  SCENARIO_FIRE,
+  scenarioList,
+  scenarioRun,
 } from "@/test/fixtures";
 
 import type { OpsMapProps } from "../map/OpsMap";
@@ -20,7 +24,7 @@ import { CommandCenter } from "./CommandCenter";
 /** MapLibre needs WebGL; this stand-in renders the same marker model as plain buttons. */
 function StubMap(props: OpsMapProps) {
   return (
-    <div data-testid="stub-map">
+    <div data-testid="stub-map" data-route={JSON.stringify(props.route ?? null)} data-focus={props.focus?.key ?? ""}>
       {buildMarkers(props).map((m) => (
         <button key={m.key} type="button" aria-label={m.label} data-classes={m.className} onClick={() => props.onSelect(m.select)}>
           {m.key}
@@ -68,7 +72,7 @@ describe("CommandCenter", () => {
     const analyze = await openKorangi();
 
     expect(screen.getByRole("heading", { name: "Korangi Industrial Area (simulated)" })).toBeInTheDocument();
-    expect(details().getByText("KHI-CAM-03")).toBeInTheDocument();
+    expect(details().getAllByText("KHI-CAM-03").length).toBeGreaterThan(0);
     expect(analyze).toBeDisabled(); // no clip chosen yet
     const map = screen.getByTestId("stub-map");
     expect(within(map).getByLabelText(/Camera: Korangi/).dataset.classes).toContain("is-selected");
@@ -244,5 +248,114 @@ describe("CommandCenter", () => {
     fireEvent.click(screen.getByRole("button", { name: "Analyze test footage" }));
 
     expect(await screen.findByText(/Analysis of pos_fire.mp4 failed: Missing or invalid X-Operator-Key/)).toBeInTheDocument();
+  });
+});
+
+describe("CommandCenter (M5 automated monitoring)", () => {
+  const scenarioDetection = {
+    ...DETECTION_PENDING,
+    details: {
+      ...DETECTION_PENDING.details,
+      source: {
+        kind: "scenario" as const,
+        scenario_id: SCENARIO_FIRE.id,
+        scenario_run_id: "9a8b7c6d-0000-4000-8000-00000000aa01",
+        video_asset: "fire_jamestown_night.mp4",
+      },
+    },
+  };
+  const running = scenarioRun({ status: "running", triggered_at: "2026-10-17T19:08:01+00:00" });
+  const detected = scenarioRun({
+    status: "detected",
+    triggered_at: "2026-10-17T19:08:01+00:00",
+    completed_at: "2026-10-17T19:08:15+00:00",
+    detection_event_id: DETECTION_PENDING.id,
+  });
+
+  it("raises an alert from a scenario detection without any operator action", async () => {
+    const pending = vi.fn().mockResolvedValueOnce([]).mockResolvedValue([scenarioDetection]);
+    const scenarios = vi
+      .fn()
+      .mockResolvedValueOnce(scenarioList([{ ...SCENARIO_FIRE, latest_run: running }]))
+      .mockResolvedValue(scenarioList([{ ...SCENARIO_FIRE, latest_run: detected }]));
+    const api = renderCenter(fakeApi({ listPendingDetections: pending, listScenarios: scenarios }));
+
+    // The run finishes on the next scenario poll (about 2 s); that reloads detections at once.
+    const alert = await within(screen.getByLabelText("Alerts")).findByText(
+      /Possible FIRE detected at Korangi Industrial Area/,
+      {},
+      { timeout: 6000 },
+    );
+    expect(alert).toBeInTheDocument();
+    expect(api.analyzeFootage).not.toHaveBeenCalled();
+    expect(api.confirmDetection).not.toHaveBeenCalled(); // never auto-confirmed
+    const map = screen.getByTestId("stub-map");
+    expect(within(map).getByLabelText(/Camera: Korangi.*1 detection awaiting review/).dataset.classes).toContain("is-pending");
+    expect(map.dataset.focus).toBe(DETECTION_PENDING.id); // the map flies to the alert
+    expect(rail().getByRole("tab", { name: /Review\s*1/ })).toBeInTheDocument();
+    expect(screen.getByLabelText("City status")).toHaveTextContent(/Pending alerts\s*1/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Review now" }));
+
+    expect(await details().findByText("Evidence review · awaiting operator decision")).toBeInTheDocument();
+    expect(details().getByLabelText(/SIMULATED LIVE FEED: Korangi/)).toBeInTheDocument();
+    expect(details().getByText(/Automated demo scenario “Korangi industrial fire”/)).toBeInTheDocument();
+    expect(details().getByRole("button", { name: "Confirm incident" })).toBeInTheDocument();
+    expect(details().getByRole("button", { name: "Reject detection" })).toBeInTheDocument();
+  }, 10000);
+
+  it("confirming shows the suggested road route and draws it on the map", async () => {
+    const withRoute = { ...INCIDENT_DETAIL, route: ROUTE_OK };
+    renderCenter(
+      fakeApi({
+        listPendingDetections: vi.fn().mockResolvedValue([scenarioDetection]),
+        confirmDetection: vi.fn().mockResolvedValue(withRoute),
+        getIncident: vi.fn().mockResolvedValue(withRoute),
+      }),
+    );
+    fireEvent.click(await rail().findByRole("tab", { name: /Review/ }));
+    fireEvent.click(await rail().findByRole("button", { name: /FIRE/ }));
+    fireEvent.click(await details().findByRole("button", { name: "Confirm incident" }));
+    fireEvent.click(details().getByRole("button", { name: "Yes, confirm incident" }));
+
+    expect(await details().findByText(/Suggested response route: 9.1 km by road, about 11 min \(estimate\)/)).toBeInTheDocument();
+    expect(details().getByText("Road distance")).toBeInTheDocument();
+    expect(details().getByText("11 min")).toBeInTheDocument();
+    expect(details().getByText("Route is an estimate. Not a dispatch confirmation.")).toBeInTheDocument();
+    expect(details().queryByText(/dispatched/i)).toBeNull();
+    await waitFor(() =>
+      expect(JSON.parse(screen.getByTestId("stub-map").dataset.route!)).toEqual(ROUTE_OK.geometry!.coordinates),
+    );
+  });
+
+  it("starts a scenario and resets the demo from the overview", async () => {
+    const api = renderCenter();
+    const start = await details().findByRole("button", { name: "Start" });
+    fireEvent.click(start);
+    await waitFor(() => expect(api.startScenario).toHaveBeenCalledWith(SCENARIO_FIRE.id));
+
+    fireEvent.click(details().getByRole("button", { name: "Reset demo" }));
+    expect(api.resetScenarios).not.toHaveBeenCalled(); // two-step
+    const loadsBefore = vi.mocked(api.listIncidents).mock.calls.length;
+    fireEvent.click(details().getByRole("button", { name: "Yes, reset demo" }));
+    await waitFor(() => expect(api.resetScenarios).toHaveBeenCalledOnce());
+    // Closed scenario incidents show at once, not at the next 10 s poll.
+    await waitFor(() => expect(vi.mocked(api.listIncidents).mock.calls.length).toBeGreaterThan(loadsBefore));
+  });
+
+  it("shows city status counts computed from the API data", async () => {
+    renderCenter(fakeApi({ listIncidents: vi.fn().mockResolvedValue([INCIDENT]) }));
+    const bar = await screen.findByLabelText("City status");
+    await waitFor(() => expect(bar).toHaveTextContent(/Monitoring nodes\s*2/));
+    expect(bar).toHaveTextContent(/Public \/ demo feeds\s*1/);
+    expect(bar).toHaveTextContent(/Active incidents\s*1/);
+    expect(bar).toHaveTextContent(/Available facilities\s*1\/2/);
+  });
+
+  it("a camera without a stream shows the unavailable state and its provenance", async () => {
+    renderCenter();
+    fireEvent.click(await rail().findByRole("button", { name: /Saddar - Empress Market/ }));
+    expect(await details().findByText(/Feed unavailable in hackathon environment: simulated coverage node/)).toBeInTheDocument();
+    expect(details().getByText("Simulated coverage node")).toBeInTheDocument();
   });
 });

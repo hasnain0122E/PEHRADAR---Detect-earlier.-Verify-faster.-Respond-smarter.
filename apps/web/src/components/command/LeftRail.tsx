@@ -2,13 +2,15 @@
 
 import { useMemo, useState } from "react";
 
-import type { Camera, Detection, Incident } from "@/lib/api/types";
+import type { Camera, Detection, Incident, SourceType } from "@/lib/api/types";
+import { type ActivityEntry, hasFeed, SOURCE_VIEW } from "@/lib/city";
 import { confidence, isActiveIncident, pktTime, SEVERITY_VIEW, sortIncidents } from "@/lib/ops";
 
+import { ActivityFeed } from "./CityPanels";
 import type { Selection } from "./selection";
 import { EventChips, ProvenanceBadge, SeverityTag, StatusChip } from "./ui";
 
-export type RailTab = "cameras" | "review" | "incidents";
+export type RailTab = "cameras" | "review" | "incidents" | "activity";
 
 interface LeftRailProps {
   tab: RailTab;
@@ -20,6 +22,7 @@ interface LeftRailProps {
   analyzingCameraId: string | null;
   onSelect: (selection: Selection) => void;
   loading: boolean;
+  activity?: ActivityEntry[];
 }
 
 const ROW =
@@ -28,17 +31,18 @@ const rowState = (selected: boolean) =>
   selected ? "border-focus/70 bg-ink-800" : "border-ink-700 bg-ink-850 hover:border-ink-500";
 
 export function LeftRail(props: LeftRailProps) {
-  const { tab, onTab, cameras, pending, incidents, loading } = props;
+  const { tab, onTab, pending, incidents, loading } = props;
   const active = incidents.filter(isActiveIncident).length;
   const tabs: { id: RailTab; label: string; count: number | null; alert?: boolean }[] = [
-    { id: "cameras", label: "Cameras", count: cameras.length || null },
+    { id: "cameras", label: "Cameras", count: null },
     { id: "review", label: "Review", count: pending.length, alert: pending.length > 0 },
     { id: "incidents", label: "Incidents", count: active, alert: active > 0 },
+    { id: "activity", label: "Activity", count: null },
   ];
 
   return (
     <nav aria-label="Operations queues" className="flex h-full min-h-0 flex-col bg-ink-900">
-      <div role="tablist" aria-label="Queues" className="grid grid-cols-3 border-b border-ink-700">
+      <div role="tablist" aria-label="Queues" className="grid grid-cols-4 border-b border-ink-700">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -48,7 +52,7 @@ export function LeftRail(props: LeftRailProps) {
             aria-selected={tab === t.id}
             aria-controls={`panel-${t.id}`}
             onClick={() => onTab(t.id)}
-            className={`flex items-center justify-center gap-1.5 border-b-2 px-2 py-2.5 text-sm font-medium focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
+            className={`flex items-center justify-center gap-1 border-b-2 px-1 py-2.5 text-[13px] font-medium focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus ${
               tab === t.id
                 ? "border-focus text-ink-100"
                 : "border-transparent text-ink-300 hover:text-ink-100"
@@ -84,8 +88,10 @@ export function LeftRail(props: LeftRailProps) {
           <CameraList {...props} />
         ) : tab === "review" ? (
           <ReviewQueue {...props} />
-        ) : (
+        ) : tab === "incidents" ? (
           <IncidentQueue {...props} />
+        ) : (
+          <ActivityFeed entries={props.activity ?? []} onSelect={props.onSelect} />
         )}
       </div>
     </nav>
@@ -111,17 +117,33 @@ function Empty({ title, hint }: { title: string; hint?: string }) {
   );
 }
 
+type SourceFilter = "all" | "feeds" | SourceType;
+const FILTERS: { id: SourceFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "feeds", label: "Feeds" },
+  { id: "simulated_coverage", label: "Simulated" },
+  { id: "verified_mapped", label: "Mapped" },
+];
+
 function CameraList({ cameras, pending, incidents, selection, analyzingCameraId, onSelect }: LeftRailProps) {
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<SourceFilter>("all");
+  const activeByCamera = new Set(incidents.filter(isActiveIncident).map((i) => i.camera.id));
+  const pendingCameras = new Set(pending.map((d) => d.camera_id));
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return q
-      ? cameras.filter((c) =>
-          [c.name, c.location_label, c.code].some((v) => v.toLowerCase().includes(q)),
-        )
-      : cameras;
-  }, [cameras, query]);
-  const activeByCamera = new Set(incidents.filter(isActiveIncident).map((i) => i.camera.id));
+    const rank = (c: Camera) =>
+      pendingCameras.has(c.id) || activeByCamera.has(c.id) ? 0 : hasFeed(c) ? 1 : 2;
+    return cameras
+      .filter((c) => (filter === "all" ? true : filter === "feeds" ? hasFeed(c) : c.source_type === filter))
+      .filter((c) =>
+        q
+          ? [c.name, c.location_label, c.code, c.district ?? ""].some((v) => v.toLowerCase().includes(q))
+          : true,
+      )
+      .sort((a, b) => rank(a) - rank(b) || a.code.localeCompare(b.code));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameras, query, filter, pending, incidents]);
 
   if (!cameras.length) return <Empty title="No cameras configured." hint="Run the API seed (python -m app.seed)." />;
 
@@ -135,9 +157,27 @@ function CameraList({ cameras, pending, incidents, selection, analyzingCameraId,
         type="search"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search camera or area"
+        placeholder="Search camera, district or code"
         className="mb-2 w-full rounded-md border border-ink-700 bg-ink-800 px-3 py-1.5 text-sm placeholder:text-ink-500 focus-visible:outline-2 focus-visible:outline-focus"
       />
+      <div role="group" aria-label="Filter cameras by source" className="mb-2 flex flex-wrap gap-1">
+        {FILTERS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            aria-pressed={filter === f.id}
+            onClick={() => setFilter(f.id)}
+            className={`rounded-sm border px-2 py-0.5 text-xs focus-visible:outline-2 focus-visible:outline-focus ${
+              filter === f.id ? "border-focus/70 bg-ink-800 text-ink-100" : "border-ink-700 text-ink-300 hover:border-ink-500"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+        <span className="ml-auto self-center font-mono text-[11px] text-ink-500 tabular-nums">
+          {shown.length}/{cameras.length}
+        </span>
+      </div>
       <ul className="grid grid-cols-1 gap-2">
         {shown.map((c) => {
           const pendingCount = pending.filter((d) => d.camera_id === c.id).length;
@@ -153,15 +193,23 @@ function CameraList({ cameras, pending, incidents, selection, analyzingCameraId,
                 <span className="flex items-start justify-between gap-2">
                   <span className="min-w-0">
                     <span className="block truncate text-sm font-medium">{c.name}</span>
-                    <span className="block truncate text-xs text-ink-300">{c.location_label}</span>
+                    <span className="block truncate text-xs text-ink-300">
+                      {c.district ?? c.location_label}
+                    </span>
                   </span>
                   <span className="shrink-0 font-mono text-[11px] whitespace-nowrap text-ink-500">{c.code}</span>
                 </span>
                 <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className={c.status === "active" ? "text-ack" : "text-ink-500"}>
-                    {c.status === "active" ? "● Active" : `○ ${c.status}`}
+                  <span className={c.status !== "active" ? "text-ink-500" : hasFeed(c) ? "text-ack" : "text-ink-300"}>
+                    {c.status !== "active" ? `○ ${c.status}` : hasFeed(c) ? "● Feed online" : "○ No feed"}
                   </span>
-                  {c.is_simulated && <ProvenanceBadge>Simulated</ProvenanceBadge>}
+                  {c.source_type === "simulated_coverage" ? (
+                    <ProvenanceBadge>Simulated</ProvenanceBadge>
+                  ) : (
+                    <span className={`rounded-sm border px-1.5 text-[11px] leading-4 uppercase ${SOURCE_VIEW[c.source_type].tone}`}>
+                      {SOURCE_VIEW[c.source_type].short}
+                    </span>
+                  )}
                   {analyzingCameraId === c.id && <span className="text-notified">Analyzing…</span>}
                   {pendingCount > 0 && (
                     <span className="font-medium text-review">
@@ -187,7 +235,7 @@ function ReviewQueue({ pending, cameras, selection, onSelect }: LeftRailProps) {
     return (
       <Empty
         title="No detections awaiting review."
-        hint="Select a camera and analyze test footage to start."
+        hint="Start a demo scenario (top bar), or analyze a clip on a camera."
       />
     );
   }

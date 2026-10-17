@@ -79,6 +79,10 @@ export function timelineView(event: TimelineEvent): TimelineView {
       return { label: "Station selected", tone: "border-l-notified text-notified" };
     case "no_station_available":
       return { label: "No station available", tone: "border-l-danger text-danger" };
+    case "route_generated":
+      return { label: "Suggested route", tone: "border-l-notified text-notified" };
+    case "route_unavailable":
+      return { label: "Route unavailable", tone: "border-l-ink-500 text-ink-300" };
     case "status_changed": {
       const to = event.details?.to;
       if (to === "notified") return { label: "Notified", tone: "border-l-notified text-notified" };

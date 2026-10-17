@@ -1,14 +1,18 @@
 "use client";
 
+import type React from "react";
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { OpsApi } from "@/lib/api/client";
-import type { Camera, Detection, Incident, IncidentDetail } from "@/lib/api/types";
+import type { Camera, Detection, Incident, IncidentDetail, Scenario } from "@/lib/api/types";
+import { buildActivity, cityStats, type LocalEvent } from "@/lib/city";
 import { EVENT_LABEL, isActiveIncident } from "@/lib/ops";
 
-import { OpsMap, type OpsMapProps } from "../map/OpsMap";
+import { type MapFocus, OpsMap, type OpsMapProps } from "../map/OpsMap";
 import { useApiHealth } from "../useApiHealth";
+import { type FeedOverride, feedMode } from "./CameraFeed";
 import { type AnalysisState, CameraPanel, isRunning } from "./CameraPanel";
+import { ActivityFeed, CityStatusBar, DemoMenu, liveScenarioLabel, ScenarioControls } from "./CityPanels";
 import { DetectionReview } from "./DetectionReview";
 import { IncidentPanel, StationPanel } from "./IncidentPanel";
 import { LeftRail, type RailTab } from "./LeftRail";
@@ -17,6 +21,7 @@ import { DemoBanner, TopBar } from "./TopBar";
 import { BUTTON_SECONDARY, InlineError } from "./ui";
 import { useAlertSound } from "./useAlertSound";
 import { describeError, useOpsData } from "./useOpsData";
+import { useScenarios } from "./useScenarios";
 
 interface Alert {
   id: string;
@@ -28,6 +33,18 @@ type Pane = "queue" | "map" | "details";
 
 // Only ever called from event handlers.
 const timestamp = () => Date.now();
+const isoNow = () => new Date().toISOString();
+
+/** Scenario clip currently shown on a demo-stream node (after its trigger, until reset). */
+function scenarioOverride(scenarios: Scenario[], cameraId: string, mediaSrc: (u: string) => string | null): FeedOverride | null {
+  const s = scenarios.find((x) => x.camera_id === cameraId && x.latest_run?.triggered_at);
+  const run = s?.latest_run;
+  if (!s || !run || run.status === "cancelled" || run.status === "scheduled") return null;
+  const src = mediaSrc(run.video_url);
+  return src
+    ? { src, note: `Scenario clip “${s.name}”: licensed sample footage on a simulated node. Not Karachi CCTV.` }
+    : null;
+}
 
 export interface CommandCenterProps {
   api: OpsApi;
@@ -49,6 +66,16 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
   const [notice, setNotice] = useState<{ incidentId: string; text: string } | null>(null);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [detectionError, setDetectionError] = useState<string | null>(null);
+  const [localEvents, setLocalEvents] = useState<LocalEvent[]>([]);
+  const [incidentDetail, setIncidentDetail] = useState<IncidentDetail | null>(null);
+  const [focus, setFocus] = useState<MapFocus | null>(null);
+  const selectionRef = useRef<Selection | null>(null);
+  useEffect(() => {
+    selectionRef.current = selection;
+  });
+  const logLocal = useCallback((event: Omit<LocalEvent, "at">) => {
+    setLocalEvents((prev) => [{ ...event, at: isoNow() }, ...prev].slice(0, 30));
+  }, []);
 
   // Ids already known, so only genuinely new items raise an alert. null until the first load.
   const seen = useRef<Set<string> | null>(null);
@@ -75,6 +102,9 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
         if (known.has(`d:${d.id}`)) continue;
         known.add(`d:${d.id}`);
         const camera = camerasRef.current.find((c) => c.id === d.camera_id);
+        // Fly to the alert unless the operator is in the middle of another review or incident.
+        const busy = selectionRef.current?.kind === "detection" || selectionRef.current?.kind === "incident";
+        if (camera && !busy) setFocus({ key: d.id, lng: camera.longitude, lat: camera.latitude });
         raise({
           id: `d:${d.id}`,
           text: `Possible ${EVENT_LABEL[d.event_type]} detected at ${camera?.name ?? "a camera"}. Operator review required.`,
@@ -95,16 +125,30 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
   );
 
   const { data, refresh } = useOpsData(api, onUpdate);
+  // A finished scenario run may have stored a detection: load it now, not at the next poll.
+  const { scenarios, start: startScenario, reset: resetScenarioData } = useScenarios(api, () => void refresh());
+  // A reset closes scenario detections and incidents: show that at once, not at the next poll.
+  const resetScenarios = useCallback(async () => {
+    const result = await resetScenarioData();
+    await refresh();
+    return result;
+  }, [resetScenarioData, refresh]);
   useEffect(() => {
     camerasRef.current = data.cameras;
   }, [data.cameras]);
 
-  const select = useCallback((next: Selection | null) => {
-    setSelection(next);
-    setDetectionError(null);
-    if (next) setPane("details");
-    if (next?.kind !== "incident") setNotice(null);
-  }, []);
+  const select = useCallback(
+    (next: Selection | null) => {
+      setSelection(next);
+      setDetectionError(null);
+      if (next) setPane("details");
+      if (next?.kind !== "incident") setNotice(null);
+      if (next?.kind === "detection") {
+        logLocal({ key: `local:review:${next.id}:${timestamp()}`, text: "Operator opened evidence review", tone: "info", select: next });
+      }
+    },
+    [logLocal],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -191,12 +235,20 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
     setDetections((prev) => ({ ...prev, [d.id]: { ...d, review_status: "confirmed" } }));
     setAlerts((prev) => prev.filter((a) => a.id !== `d:${d.id}`));
     setConfirmed(incident);
+    setIncidentDetail(incident);
     setRailTab("incidents");
     select({ kind: "incident", id: incident.id });
+    const route = incident.route;
+    const routeText =
+      route?.status === "ok"
+        ? ` Suggested response route: ${route.distance_km.toFixed(1)} km by road, about ${Math.max(1, Math.round(route.duration_min))} min (estimate).`
+        : route
+          ? " Road route unavailable; straight-line distance shown."
+          : "";
     setNotice({
       incidentId: incident.id,
       text: incident.station_selection
-        ? `Incident created. Candidate station: ${incident.station_selection.station.name} (${incident.station_selection.distance_km.toFixed(2)} km straight-line). No dispatch was sent.`
+        ? `Incident created. Candidate station: ${incident.station_selection.station.name} (${incident.station_selection.distance_km.toFixed(2)} km straight-line).${routeText} No dispatch was sent.`
         : "Incident created. No fire station is marked available in the demo data.",
     });
     void refresh();
@@ -205,17 +257,93 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
   async function rejectDetection(d: Detection, note: string) {
     const updated = await api.rejectDetection(d.id, note ? { note } : {});
     setDetections((prev) => ({ ...prev, [d.id]: updated }));
+    const code = data.cameras.find((c) => c.id === d.camera_id)?.code;
+    logLocal({
+      key: `local:reject:${d.id}`,
+      text: `${code ? `${code}: ` : ""}Operator rejected the detection${note ? ` (“${note}”)` : ""}; no incident created`,
+      tone: "muted",
+      select: { kind: "detection", id: d.id },
+    });
     setAlerts((prev) => prev.filter((a) => a.id !== `d:${d.id}`));
     void refresh();
   }
 
   const activeIncidents = data.incidents.filter(isActiveIncident).length;
+  const stats = useMemo(
+    () => cityStats(data.cameras, data.stations, data.pending, data.incidents),
+    [data.cameras, data.stations, data.pending, data.incidents],
+  );
+  const activity = useMemo(
+    () =>
+      buildActivity({
+        cameras: data.cameras,
+        incidents: data.incidents,
+        pending: data.pending,
+        scenarios: scenarios.items,
+        local: localEvents,
+      }),
+    [data.cameras, data.incidents, data.pending, scenarios.items, localEvents],
+  );
+  const scenarioCameraIds = useMemo(
+    () => scenarios.items.filter((s) => s.latest_run?.status === "running" && s.camera_id).map((s) => s.camera_id!),
+    [scenarios.items],
+  );
+  const mediaSrc = (url: string) => api.mediaSrc(url);
+  const feedFor = (camera: Camera) =>
+    feedMode(camera, (u) => api.mediaSrc(u), scenarioOverride(scenarios.items, camera.id, mediaSrc));
+  const lastActivityFor = (cameraId: string) => {
+    const times = [
+      ...data.pending.filter((d) => d.camera_id === cameraId).map((d) => d.detected_at),
+      ...data.incidents.filter((i) => i.camera.id === cameraId).map((i) => i.updated_at ?? i.created_at ?? ""),
+    ].filter(Boolean);
+    return times.sort().at(-1) ?? null;
+  };
+  const scenarioNoteFor = (cameraId: string) => {
+    const s = scenarios.items.find((x) => x.camera_id === cameraId);
+    return s
+      ? `Demo-scenario node: “${s.name}” plays licensed sample footage here and runs it through the real detector. Start it from Demo scenarios in the top bar.`
+      : null;
+  };
+  const originNoteFor = (d: Detection) => {
+    const source = d.details.source;
+    if (source?.kind === "scenario") {
+      const s = scenarios.items.find((x) => x.id === source.scenario_id);
+      return `Automated demo scenario${s ? ` “${s.name}”` : ""} (sample clip, real detector)`;
+    }
+    return source?.kind === "upload" ? "Operator-uploaded test clip" : "Test clip";
+  };
+  const selectedRoute =
+    selection?.kind === "incident" &&
+    incidentDetail?.id === selection.id &&
+    incidentDetail.route?.status === "ok"
+      ? (incidentDetail.route.geometry?.coordinates ?? null)
+      : null;
+  const openFromActivity = (s: NonNullable<(typeof activity)[number]["select"]>) => {
+    setRailTab(s.kind === "incident" ? "incidents" : s.kind === "detection" ? "review" : railTab);
+    select(s);
+  };
   const busyCamera = isRunning(analysis)
     ? data.cameras.find((c) => c.id === analysis?.cameraId)
     : undefined;
 
   function renderPanel() {
-    if (!selection) return <Overview pending={data.pending.length} active={activeIncidents} />;
+    if (!selection) {
+      return (
+        <Overview
+          pending={data.pending.length}
+          active={activeIncidents}
+          scenarios={
+            <ScenarioControls
+              state={scenarios}
+              onStart={startScenario}
+              onReset={resetScenarios}
+              onOpenCamera={(id) => select({ kind: "camera", id })}
+            />
+          }
+          activity={<ActivityFeed entries={activity.slice(0, 8)} onSelect={openFromActivity} />}
+        />
+      );
+    }
     switch (selection.kind) {
       case "camera": {
         const camera = data.cameras.find((c) => c.id === selection.id);
@@ -229,18 +357,24 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
             onAnalyze={(file) => void analyze(camera, file)}
             onReset={() => setAnalysis(null)}
             onOpenReview={() => setRailTab("review")}
+            feed={feedFor(camera)}
+            lastActivity={lastActivityFor(camera.id)}
+            scenarioNote={scenarioNoteFor(camera.id)}
           />
         );
       }
-      case "detection":
+      case "detection": {
         if (!selectedDetection) {
           return detectionError ? <InlineError>{detectionError}</InlineError> : <PanelSkeleton />;
         }
+        const reviewCamera = data.cameras.find((c) => c.id === selectedDetection.camera_id);
         return (
           <DetectionReview
             key={selectedDetection.id}
             detection={selectedDetection}
-            camera={data.cameras.find((c) => c.id === selectedDetection.camera_id)}
+            camera={reviewCamera}
+            feed={reviewCamera ? feedFor(reviewCamera) : undefined}
+            originNote={originNoteFor(selectedDetection)}
             evidenceSrc={api.evidenceSrc(selectedDetection.evidence_url)}
             onConfirm={confirmDetection}
             onReject={rejectDetection}
@@ -248,6 +382,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
             onBack={() => select({ kind: "camera", id: selectedDetection.camera_id })}
           />
         );
+      }
       case "incident":
         return (
           <IncidentPanel
@@ -258,6 +393,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
             api={api}
             notice={notice?.incidentId === selection.id ? notice.text : null}
             onSelectStation={(id) => select({ kind: "station", id })}
+            onLoaded={setIncidentDetail}
           />
         );
       case "station": {
@@ -280,7 +416,17 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
         activeIncidents={activeIncidents}
         analyzing={isRunning(analysis)}
         sound={sound}
+        demo={
+          <DemoMenu
+            state={scenarios}
+            label={liveScenarioLabel(scenarios)}
+            onStart={startScenario}
+            onReset={resetScenarios}
+            onOpenCamera={(id) => select({ kind: "camera", id })}
+          />
+        }
       />
+      <CityStatusBar stats={stats} scenarioLive={liveScenarioLabel(scenarios)} />
       <AlertStrip
         alerts={alerts}
         onOpen={(a) => {
@@ -331,6 +477,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
             analyzingCameraId={isRunning(analysis) ? (analysis?.cameraId ?? null) : null}
             onSelect={select}
             loading={data.status === "loading"}
+            activity={activity}
           />
         </aside>
         <section aria-label="Karachi operations map" className={`${paneClass("map")} min-h-[320px] flex-col`}>
@@ -340,7 +487,10 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
             incidents={data.incidents}
             pending={data.pending}
             analyzingCameraId={isRunning(analysis) ? (analysis?.cameraId ?? null) : null}
+            scenarioCameraIds={scenarioCameraIds}
             selection={selection}
+            route={selectedRoute}
+            focus={focus}
             onSelect={(s) => {
               setRailTab(s.kind === "incident" ? "incidents" : s.kind === "detection" ? "review" : railTab);
               select(s);
@@ -368,7 +518,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
 
       <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5 border-t border-ink-700 bg-ink-900 px-4 py-1 text-[11px] text-ink-500">
         <span>Decision support only · every detection needs operator confirmation · no notification or dispatch is sent</span>
-        <span>Fire stations © OpenStreetMap contributors (ODbL), unverified</span>
+        <span>Stations, roads and routes © OpenStreetMap contributors (ODbL) · routes by OSRM, estimates only</span>
       </footer>
     </div>
   );
@@ -426,33 +576,46 @@ function PanelSkeleton() {
   );
 }
 
-function Overview({ pending, active }: { pending: number; active: number }) {
+function Overview({
+  pending,
+  active,
+  scenarios,
+  activity,
+}: {
+  pending: number;
+  active: number;
+  scenarios: React.ReactNode;
+  activity: React.ReactNode;
+}) {
   return (
-    <div className="grid gap-4 text-sm">
+    <div className="grid gap-5 text-sm">
       <div>
         <p className="text-xs font-medium tracking-wider text-ink-300 uppercase">Karachi Fire Department</p>
-        <h2 className="mt-1 text-lg font-semibold">Live threat monitoring and response</h2>
+        <h2 className="mt-1 text-lg font-semibold">City monitoring overview</h2>
       </div>
       <dl className="grid grid-cols-2 gap-2">
-        <div className="rounded-md border border-ink-700 bg-ink-850 p-3">
+        <div className="rounded-sm border border-ink-700 bg-ink-850 p-3">
           <dt className="text-xs text-ink-300">Awaiting review</dt>
           <dd className={`font-mono text-2xl tabular-nums ${pending ? "text-review" : ""}`}>{pending}</dd>
         </div>
-        <div className="rounded-md border border-ink-700 bg-ink-850 p-3">
+        <div className="rounded-sm border border-ink-700 bg-ink-850 p-3">
           <dt className="text-xs text-ink-300">Active incidents</dt>
           <dd className={`font-mono text-2xl tabular-nums ${active ? "text-sev-high" : ""}`}>{active}</dd>
         </div>
       </dl>
-      <ol className="grid list-decimal gap-1.5 pl-5 text-ink-300">
-        <li>Select a camera on the map or in the Cameras list.</li>
-        <li>Analyze a test clip for that camera.</li>
-        <li>Review the AI evidence, then confirm or reject it.</li>
-        <li>Confirmed incidents show a candidate station and a timeline.</li>
-      </ol>
+      <section className="grid gap-2" aria-label="Demo scenarios">
+        <h3 className="text-xs font-medium tracking-wider text-ink-300 uppercase">Demo scenarios</h3>
+        {scenarios}
+      </section>
+      <section className="grid gap-1" aria-label="Recent activity">
+        <h3 className="text-xs font-medium tracking-wider text-ink-300 uppercase">Recent activity</h3>
+        {activity}
+      </section>
       <p className="border-l-2 border-sim pl-3 text-xs text-ink-300">
-        Cameras are simulated and footage is test data. The AI is decision support; an operator
-        confirms every incident. Station availability is demonstration data, and the candidate
-        station is chosen by straight-line distance only.
+        No official or Safe City CCTV is connected. Coverage nodes are simulated placements on
+        mapped roads; demo-stream nodes loop licensed sample footage. The AI is decision support and
+        an operator confirms every incident. Station availability is demonstration data; the
+        candidate station is chosen by straight-line distance and the route is an estimate.
       </p>
     </div>
   );

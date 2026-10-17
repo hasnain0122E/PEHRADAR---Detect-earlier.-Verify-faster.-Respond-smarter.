@@ -100,3 +100,25 @@ describe("forwardOperatorRequest", () => {
     expect(unconfigured.status).toBe(503);
   });
 });
+
+describe("forwardOperatorRequest (M5 scenario actions)", () => {
+  it("forwards scenario start and reset with the server-side key", async () => {
+    for (const path of ["scenarios/korangi-industrial-fire/start", "scenarios/reset"]) {
+      const fetchImpl = vi.fn().mockResolvedValue(Response.json({ ok: true }));
+      const res = await forwardOperatorRequest(post(path), path.split("/"), ENV, fetchImpl);
+      expect(res.status).toBe(200);
+      const [url, init] = fetchImpl.mock.calls[0];
+      expect(url).toBe(`https://api.test/api/v1/${path}`);
+      expect(init.headers["X-Operator-Key"]).toBe("server-secret-key");
+    }
+  });
+
+  it("does not forward other scenario paths", async () => {
+    const fetchImpl = vi.fn();
+    for (const path of ["scenarios", "scenarios/a/b/start", "scenarios/../health/start", "scenarios/X Y/start"]) {
+      const res = await forwardOperatorRequest(post(path), path.split("/"), ENV, fetchImpl);
+      expect(res.status).toBe(404);
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});

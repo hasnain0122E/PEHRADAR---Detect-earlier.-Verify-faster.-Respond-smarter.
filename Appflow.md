@@ -1,6 +1,6 @@
 # PehRadar — Application Flows
 
-**Status:** Draft v0.1 (M0); §1.1 (M4 UI), §3.1, §3.2 and §5 (M3) describe implemented behaviour. Defines the intended behaviour. Endpoint names match `Techspec.md` §3.1. Enum values match `Schema.md` §3.
+**Status:** Draft v0.1 (M0); §1.2 (M5 automated monitoring), §1.1 (M4 UI), §3.1, §3.2 and §5 (M3) describe implemented behaviour. Defines the intended behaviour. Endpoint names match `Techspec.md` §3.1. Enum values match `Schema.md` §3.
 
 ---
 
@@ -37,6 +37,24 @@
 | 6 | Opens an incident from the queue or map | `GET /incidents/{id}`. Reloaded when the polled list shows a newer `updated_at`. | Incident detail and timeline (only events that exist). |
 
 Errors: network/5xx on load → red banner with Retry (stale-data note after a later failed poll). Upload or review failures show inline with the API message. `409 DETECTION_ALREADY_REVIEWED` explains that another console reviewed it and links the incident. `401` names the server-side key.
+
+### 1.2 M5 automated monitoring flow (implemented 2026-10-17; the primary demo path)
+
+| # | Actor | System behaviour | UI result |
+|---|---|---|---|
+| 1 | Operator opens the dashboard | Loads 179 nodes and 11 stations once; polls incidents and detections (10 s) and scenarios (10 s, or 2 s while a run is live). | City status bar, 3D map with clusters, feed nodes, stations; overview with demo scenarios and recent activity. |
+| 2 | Operator presses **Start** on a scenario (overview or **Demo scenarios** in the top bar) | `POST /api/operator/scenarios/{id}/start` → `scenario_run` scheduled at now + delay. | "Armed T−N s"; status bar "Demo scenario: … · armed"; activity "Scenario armed". |
+| 3 | — (trigger time passes) | Worker claims the run; the demo-stream node's feed switches to the scenario clip; the **real detector** analyses it. | Feed on that camera plays the scenario clip (SIMULATED LIVE FEED); activity "Demo feed changed; real detector analysing frames"; camera marker spins. |
+| 4a | — (temporal rule confirms) | Pending `DetectionEvent` with real confidence, evidence and `details.source = scenario`. | The web sees the run finish and reloads detections immediately. The alert strip says "Possible FIRE detected at …". The Review count rises, the camera marker turns amber with a badge, and the map flies to it. The chime plays only if the operator enabled sound. Activity: "Temporal confirmation passed …". |
+| 4b | — (rule not met, e.g. Lyari glare) | Run stored as `not_detected` with the real peaks. No detection, no alert. | Activity "No persistent fire or smoke; temporal rule not met (peak 0.52). No alert raised". |
+| 5 | Operator presses **Review now** | `GET /detections/{id}`. | Review panel: camera, feed, AI evidence frame, type, confidence, detection time, rule, coordinates, source/provenance, input ("Automated demo scenario …"), disclaimer, **Reject detection** / **Confirm incident**. |
+| 6 | **Confirm incident**, then **Yes, confirm incident** | M3 confirmation (incident, severity, nearest available station by Haversine), then a road route from OSRM, stored on the incident. | Notice includes the candidate station and "Suggested response route: X km by road, about N min (estimate). No dispatch was sent." The map draws the route and frames station + route + incident. Route panel: road distance, estimated travel, provider, generated time, "Route is an estimate. Not a dispatch confirmation." Timeline: Detected → Confirmed → Station selected → Suggested route. |
+| 6′ | **Reject detection** | M3 rejection. | "Detection rejected. No incident was created." Activity "Operator rejected the detection". |
+| 7 | **Reset demo** (two-step) | `POST /api/operator/scenarios/reset`: cancel unfinished runs, reject pending scenario detections, resolve open scenario incidents (system timeline event). Nothing deleted. | Queues and counts update immediately. |
+
+Manual clip upload (§1.1) remains on every camera as **Diagnostic: analyze a clip**.
+
+Routing failure (§2.6 as built): the incident still completes; `route.status = unavailable`, the panel shows "Road route unavailable; straight-line distance shown", and the timeline records `route_unavailable`.
 
 ## 2. Alternate and error flows
 

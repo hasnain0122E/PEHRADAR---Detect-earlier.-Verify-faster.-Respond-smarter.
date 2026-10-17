@@ -198,13 +198,28 @@ Remaining spikes (S-Map, S-Routing, S-Notify, S-Stations) keep the table below. 
   3. Local end-to-end in a real browser (positive → confirm, negative, smoke → reject) works through the proxy.
   4. On Vercel + Render: the same flow works and the key is absent from the browser bundle.
 
+### M5 — City intelligence upgrade (user brief) ← *built and verified locally 2026-10-17; Render/Vercel redeploy pending. Replaces the "M5 — Review, incident, notification & acknowledgement API" draft below, which moves to later work.*
+**Dep:** M4.
+- **P0, built:**
+  - schema/data expansion: 179 nodes with provenance and 11 OSM facilities (migration `0002`);
+  - automated scenario engine running the real detector (3 scenarios, reset);
+  - automatic alert workflow;
+  - feed abstraction and viewer.
+- **P1, built:** 3D MapLibre buildings, clustering, and an OSRM road route with straight-line fallback.
+- **P2:** visual polish built. **Public live feeds: none integrated** (no lawful, stable Karachi stream found; not searched further, per the brief).
+- **Not in scope:** police, ambulance, authentication, LLMs, notifications, acknowledgement automation.
+- **Exit:**
+  1. pytest, ruff, Vitest, lint, typecheck and build pass.
+  2. Local real-browser run: scenario → automatic alert → review → confirm → route; negative scenario raises no alert; reject; reset.
+  3. On Render + Vercel: the same flow works with `SCENARIOS_ENABLED=true`.
+
 ### M4 (draft v0.1) — Detection pipeline & analysis jobs
 **Dep:** M3. (S-Model is **not** required. The heuristic unblocks it.)
 - Video validation, sampling, `HeuristicDetector`, `aggregation`, evidence rendering, job runner with startup recovery, `POST /cameras/{id}/analysis-jobs`, `GET /analysis-jobs/{id}`, detection list/detail/evidence endpoints, dedup applied at persist time.
 - `OnnxYoloDetector` added when S-Model delivers weights (can land after VS1).
 - **Exit:** AC-03, AC-04 (synthetic), AC-05 (synthetic), AC-08 (unit + integration), AC-17 pass in pytest. Measured processing time for a 60 s clip recorded.
 
-### M5 — Review, incident, notification & acknowledgement API
+### M5 (draft v0.1) — Review, incident, notification & acknowledgement API
 **Dep:** M3 (M4 for realistic data, but tests construct detections directly).
 - Confirm/reject, incident creation/attachment, station candidates (straight-line, plus routing client if S-Routing is done), assign, notify (console + chosen email/webhook adapters + test `failing` provider), retry, limits, ack GET/POST, resolve, notes, timeline writes.
 - **Exit:** AC-06, AC-07 (API part), AC-09 (API part), AC-10 (console), AC-11, AC-12, AC-13 (API part), AC-18 pass in pytest.

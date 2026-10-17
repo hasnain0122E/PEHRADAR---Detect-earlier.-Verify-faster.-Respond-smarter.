@@ -18,7 +18,22 @@ from dataclasses import dataclass
 from typing import Protocol
 
 CAMERA_STATUSES = ("active", "offline", "maintenance")
+# M5 provenance. public_live: a lawful public stream; verified_mapped: a camera location mapped in
+# a public dataset (no feed); simulated_coverage: a PehRadar placeholder, not a camera;
+# demo_stream: a simulated node looping licensed sample footage.
+CAMERA_SOURCE_TYPES = ("public_live", "verified_mapped", "simulated_coverage", "demo_stream")
+STREAM_TYPES = ("hls", "mjpeg", "mp4_loop", "none")
 STATION_STATUSES = ("available", "unavailable")
+FACILITY_TYPES = (
+    "municipal_fire_station",
+    "port_fire_station",
+    "airport_fire_station",
+    "industrial_fire_station",
+    "rescue_station",
+    "institutional_fire_response",
+    "fire_station_unclassified",
+)
+SCENARIO_RUN_STATUSES = ("scheduled", "running", "detected", "not_detected", "failed", "cancelled")
 DETECTION_EVENT_TYPES = ("fire", "smoke", "fire_smoke")
 REVIEW_STATUSES = ("pending", "confirmed", "rejected")
 SEVERITIES = ("low", "medium", "high")
@@ -36,6 +51,8 @@ TIMELINE_EVENT_TYPES = (
     "operator_confirmed",
     "station_selected",
     "no_station_available",
+    "route_generated",
+    "route_unavailable",
     "status_changed",
     "resolved",
     "rejected",

@@ -1,6 +1,6 @@
 # PehRadar — Technical Specification
 
-**Status:** Draft v0.1 (M0). Describes the intended design. No code exists yet.
+**Status:** Draft v0.1 (M0); §14 describes what M5 actually built (2026-10-17) and wins where they differ.
 Each decision is tagged **[CONFIRMED]** (decided, build on it) or **[INVESTIGATE]** (resolved by the named spike/milestone and recorded in `Tracker.md` → Decisions).
 
 ---
@@ -481,3 +481,62 @@ Use only types that behave the same on SQLite and Postgres: `String` UUIDs, `Dat
 | Q5 | Email provider: Resend vs SMTP; and is a webhook demo target (e.g. webhook.site, Discord) acceptable? | M2 |
 | Q6 | Sample clips: which licensed sources, or record our own? | M2 |
 | Q7 | Hackathon deadline date, team size, and whether judges will use the deployed app themselves (affects access-key UX). | User |
+
+
+## 14. M5 implementation: city intelligence upgrade (2026-10-17)
+
+This section describes what is built. Where it differs from §7 (written in M0), this section wins.
+
+### 14.1 Monitoring network and provenance
+- `seed/karachi_network.json` is generated offline by `seed/build_karachi_network.py` from three Overpass exports (queries in the script header): major roads, `amenity/emergency=fire_station`, and `man_made=surveillance`. The generator is deterministic: no randomness, no runtime Overpass calls.
+- **Simulated coverage placement:** each zone has an anchor, a radius and a node count. Nodes are chosen from vertices of named motorway/trunk/primary/secondary roads inside the zone by farthest-point sampling from the vertex nearest the anchor, with ≥ 0.45 km between any two nodes. Road vertices are never in water or parks.
+- **Stations:** 11 hand-reviewed OSM elements. Excluded: two businesses mis-tagged as fire stations, one duplicate node about 50 m from another, one unnamed duplicate way, and an ambulance station. `facility_type` is inferred from the OSM name/operator.
+- **Surveillance:** of 3 OSM `man_made=surveillance` features, two are CCTV shops/companies and were excluded; one plain camera point is `verified_mapped`.
+- The 8 M3 cameras keep their codes and UUIDs; three became `demo_stream` nodes.
+- The API serializes `monitoring_status` from what PehRadar actually does: `monitoring` (demo/public feed), `simulated`, `not_connected` (mapped location only), `offline`, `maintenance`.
+
+### 14.2 Feed abstraction
+- `camera.stream_type` is one of `hls | mjpeg | mp4_loop | none`.
+- `stream_url` is API-relative for demo loops (`/api/v1/media/<file>`). Only a `public_live` node may hold an absolute URL, and the web client plays only `https://` ones.
+- `GET /api/v1/media/{name}` serves files from `apps/api/demo_assets/` only (name pattern `[a-z0-9_]+.mp4`) and supports HTTP Range.
+- Web: `CameraFeed` picks the renderer from `stream_type`: `<video>` for MP4 loops and native HLS, `<img>` for MJPEG, otherwise an unavailable state ("Feed unavailable in hackathon environment").
+- Labels: demo footage is always **SIMULATED LIVE FEED**; only `public_live` may say **PUBLIC LIVE FEED**.
+- No RTSP discovery or access-control bypass. Adding an authorised stream later is a seed change, not a code change.
+
+### 14.3 Scenario engine (`app/services/scenarios.py`)
+- Scenarios are configured in `seed/scenarios.json`: id, name, enabled, camera code, video asset, `trigger_after_seconds`, `expected_behavior`.
+- `POST /scenarios/{id}/start` (operator) stores a `scenario_run` row (`scheduled`, `trigger_at = now + delay`).
+- A daemon thread calls `tick()` once a second. It claims due runs with a conditional `UPDATE … WHERE status='scheduled'`, so only one worker runs each one. Each run goes through the same detection path as `POST /detect/fire` (`app/services/fire_detection.py`).
+- On a confirmed result, the run stores a pending `DetectionEvent` with `details.source = {kind: "scenario", …}`. On a negative result, nothing is stored except the run result. The engine never confirms, creates incidents or selects stations.
+- `POST /scenarios/reset` (operator) cancels unfinished runs, rejects pending scenario detections ("Demo reset") and resolves open scenario incidents with a system timeline event. Nothing is deleted, and upload-created data is untouched. A run cancelled while the model is running discards its result.
+- On restart, runs left `running` are marked `failed`.
+- Settings: `SCENARIOS_ENABLED` (unset: on outside production, **off in production unless `true`**), `SCENARIO_DELAY_OVERRIDE_S`, `SCENARIO_WORKER`.
+
+### 14.4 Routing (`app/routing`)
+- Station selection is unchanged: the nearest *available* station by Haversine distance.
+- After the confirmation commits, `operations.attach_route` asks a `RouteProvider` for a road route from that station to the incident and stores it on `incident.route` (JSON), with a `route_generated` timeline event.
+- On any failure (network, timeout, no route, bad geometry) it stores `{status: "unavailable", fallback: "straight_line", straight_line_km, reason}` and a `route_unavailable` event. The incident is never rolled back.
+- **Provider:** `OsrmRouteProvider`, defaulting to the public OSRM demo server (`router.project-osrm.org`, driving profile, `overview=full&geometries=geojson`).
+  - Its usage policy allows light use only: about 1 request/s, no SLA. PehRadar makes one request per confirmed incident and caches the result on the incident.
+  - `ROUTING_PROVIDER=none` disables routing; `OSRM_BASE_URL` swaps in a self-hosted or other OSRM; `ROUTING_TIMEOUT_S` defaults to 8.
+- **Limitation:** durations are free-flow estimates (no traffic, signals or emergency-vehicle rules). The Haversine-nearest station is not always the road-nearest. For Korangi, Manzoor Colony is 4.55 km straight-line but 9.28 km by road, and Landhi is 7.63 km straight-line but 9.05 km by road.
+
+### 14.5 Map architecture (web)
+- MapLibre GL JS 6.11.2 with the OpenFreeMap dark style, extended in place (no Cesium).
+- **3D:** a `fill-extrusion` layer on the style's `openmaptiles`/`building` source layer, `minzoom` 13.5, height from `render_height` and rising in over one zoom level. It is inserted below the first label layer. 3D view: pitch 52°, bearing −17°. The 2D/3D toggle eases pitch and bearing and hides the extrusions. Defaults to 3D, or 2D under `prefers-reduced-motion`.
+- **Scale:**
+  - Quiet cameras are one GeoJSON source with MapLibre clustering (radius 46 px, cluster max zoom 14), drawn as circle and symbol layers. Clicking a cluster zooms to its expansion zoom.
+  - Cameras that need attention stay individual HTML markers and are never clustered: pending detection, active incident, scenario or manual analysis, selected, or any feed node. Incidents and stations are HTML markers too, so an alert can never hide in a cluster.
+- **Route:** a GeoJSON line source with a casing layer and a line layer. The selected incident is framed with its station and route.
+- **Alerts:** a new pending detection flies the map to its camera, unless the operator is in another review or incident.
+- **Polling:** one camera and one station request on load; incidents and detections every 10 s; scenarios every 10 s, or every 2 s while a run is armed or analysing. No per-marker requests. Feeds load only for the selected camera.
+
+### 14.6 New endpoints
+
+| Method | Path | Auth |
+|---|---|---|
+| GET | `/api/v1/scenarios` | public |
+| POST | `/api/v1/scenarios/{id}/start` · `/api/v1/scenarios/reset` | operator key (via the web proxy) |
+| GET | `/api/v1/media/{name}` | public (licensed demo clips only) |
+
+Camera, station and incident JSON gained the fields in `Schema.md` §4A.

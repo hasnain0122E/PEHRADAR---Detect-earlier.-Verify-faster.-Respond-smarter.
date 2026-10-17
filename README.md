@@ -2,13 +2,19 @@
 
 **Detect earlier. Verify faster. Respond smarter.**
 
-PehRadar is a hackathon MVP for **fire and smoke incident detection with operator-assisted response in Karachi, Pakistan**. Pre-recorded videos stand in for camera feeds. A computer-vision pipeline flags *possible* fire/smoke, a human operator reviews the evidence, and confirmed incidents are routed to a candidate fire station through a **test** notification.
+PehRadar is a hackathon MVP for **fire and smoke incident detection with operator-assisted response in Karachi, Pakistan**.
+- A simulated city monitoring network runs licensed sample clips through a real fire/smoke model.
+- A human operator reviews the evidence.
+- Confirmed incidents get a candidate fire station and a suggested road route.
 
-> ⚠️ **Demo system.** Cameras are simulated, notifications go to controlled test recipients, and station data is unverified. PehRadar is decision support and is **not connected to any emergency service**.
+> ⚠️ **Demo system.**
+> - **No official or Safe City CCTV is connected.** Monitoring nodes are simulated placements or OSM-mapped locations, and demo feeds are licensed sample footage.
+> - Station data is from OpenStreetMap and unverified; availability is a demo flag. Routes are estimates.
+> - PehRadar is decision support and is **not connected to any emergency service**.
 
 **Current status:**
-- M2 fire/smoke detection is live on Render.
-- M3 (database and incident workflow) and M4 (the command-center dashboard) are built and tested locally. Their Neon, Render and Vercel deploys are pending.
+- M1–M4 are complete and deployed (per the user's M5 brief).
+- M5 is built and verified locally: city-scale network, automated scenarios, 3D map, clustering, feeds and road routing. Its Render and Vercel redeploy is pending.
 
 See [`Tracker.md`](Tracker.md).
 
@@ -104,6 +110,9 @@ The live URLs and verification results are recorded in `Tracker.md`. No producti
 | Env `DATABASE_URL` | M3: Neon PostgreSQL connection string (secret; required in production) |
 | Env `OPERATOR_API_KEY` | M3: long random secret for operator writes (`X-Operator-Key`) |
 | Env `CORS_ORIGINS` | **Leave unset** until the Vercel URL exists, then set `https://<your-vercel-domain>` |
+| Env `SCENARIOS_ENABLED` | M5: `true` to enable the demo scenario engine. It is **off in production when unset**. |
+| Env `ROUTING_PROVIDER` | M5: `osrm` (default; public OSRM demo server, light use) or `none` |
+| Env `SCENARIO_DELAY_OVERRIDE_S` | M5, optional: one trigger delay for every scenario (for example `20`); unset keeps 20–45 s per scenario |
 
 - Render detects uv because `apps/api/uv.lock` exists.
 - `--no-dev` and `--no-sync` keep pytest and ruff out of production. Plain `uv run` would install the dev group at startup.

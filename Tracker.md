@@ -1,16 +1,15 @@
 # PehRadar — Tracker
 
 **Last updated:** 2026-10-17
-**Current milestone:** M4 — Fire Department command center (IN_PROGRESS: built and verified locally; Vercel deploy pending). M3 is still IN_PROGRESS: code committed (`45558c3`), but no Neon/Render evidence has been recorded yet.
+**Current milestone:** M5 — City intelligence upgrade (IN_PROGRESS: built and verified locally; Render/Vercel redeploy pending).
+**M3 and M4:** the user's M5 brief (2026-10-17) states that M1–M4 are complete and deployed with Neon persistence. That statement is recorded here; the deployment evidence itself was not provided to this tracker.
 **Last completed:** M2 — Fire/smoke detection MVP (DONE, verified on Render 2026-10-17; frozen per the user's M3 brief). Before that: M1 (M1a–M1d). M1c/M1d were accepted by the user in the M2 brief ("M1 is complete"). Two evidence items were never recorded; see M1c-T6 and M1d-T6.
 **Statuses:** `TODO` · `IN_PROGRESS` · `BLOCKED` · `DONE` (DONE only with recorded verification, per `Rules.md` §8)
 
-> **Deployed:** health and `POST /api/v1/detect/fire` (live on Render).
-> **Built and verified locally, not yet deployed:**
-> - the M3 database and incident API;
-> - the M4 command-center dashboard (map, queues, upload, review, incidents).
+> **Deployed (user-reported in the M5 brief):** the M1–M4 system: detection, Neon persistence, incident workflow and the command center.
+> **Built and verified locally, not yet deployed:** M5. That covers the 179-node network with provenance, 11 OSM facilities, the automated scenario engine, feeds, 3D map, clustering, OSRM road routes, the status bar and the activity feed.
 >
-> **Not built:** notifications and routing.
+> **Not built:** notifications and acknowledgement automation, authentication.
 
 | Track | Status |
 |---|---|
@@ -24,9 +23,11 @@
 | OpenCV + ONNX Runtime on Render | User reported it as "verified enough to proceed" in the M1d brief. **No Render log recorded yet**; the M1d deploy collects it. |
 | Video decode/sampling + test upload endpoint | **Local DONE** (35 tests pass). **Render: works** (`ef27550`). Two real 11.7 s clips processed, peak RSS 145 MB. |
 | Fire/smoke detection endpoint (M2) | **DONE on Render** (`b63863e`, CI green). Three 30 s clips: same decisions as locally, 12.8–14.8 s processing, peak RSS ≤ 178.5 MB. |
-| Database + operational API (M3) | **Local DONE** (109 tests; end-to-end rehearsal on SQLite with the real model). **Neon NOT CONNECTED**; Render not yet redeployed. |
-| Command-center dashboard + map (M4) | **Local DONE** (48 web tests; real-browser end-to-end against the local API with the real model). **Vercel NOT redeployed.** |
-| Notifications, acknowledgement, routing | **NOT STARTED** |
+| Database + operational API (M3) | **DONE (user-reported, M5 brief)**. Locally verified (109 tests). |
+| Command-center dashboard + map (M4) | **DONE (user-reported, M5 brief)**. Locally verified (48 web tests, real-browser run). |
+| City intelligence upgrade (M5) | **Local DONE**: 135 API tests, 71 web tests, and a real-browser run of all three scenarios with the real model and live OSRM. **Render/Vercel NOT redeployed.** |
+| Road routing | **Local DONE** (OSRM public demo server, straight-line fallback) |
+| Notifications, acknowledgement automation | **NOT STARTED** (out of M5 scope) |
 
 Deployed URLs live here and in the hosts' env settings only. None is hard-coded in application code.
 
@@ -34,10 +35,14 @@ Deployed URLs live here and in the hosts' env settings only. None is hard-coded 
 
 ## Exact next task
 
-1. **M3-T10/T11 (user):** Neon + Render deploy and the persistence check (steps in the M3 report), if not done yet.
-2. **M4-T13 (user):** on Vercel, set `OPERATOR_API_KEY` (server-only, same value as Render), redeploy, and run the browser flow (steps in the M4 report).
+1. **M5-T15 (user):**
+   - Push.
+   - On Render, set `SCENARIOS_ENABLED=true`. The existing start command runs migration `0002` and the seed.
+   - Redeploy Vercel. No new web env vars.
+   - Run the scenario flow on the deployed URLs (steps in the M5 report).
+2. Send back: the Render log lines for `0002` and the seed counts, plus the browser result (alert, confirm, route).
 
-M4 is marked DONE only after step 2's evidence is recorded.
+M5 is marked DONE only after that evidence is recorded.
 
 Still open: Q2 (AGPL acceptance) and the demo clip choice.
 
@@ -52,9 +57,10 @@ Still open: Q2 (AGPL acceptance) and the demo clip choice.
 | M1d Video-processing feasibility spike | DONE (user-accepted 2026-10-17) | M1c | 60 s clip uploaded and processed synchronously on Render with wall time and RSS recorded; limits and go/no-go recorded; DB decision recorded |
 | M2 Fire/smoke detection MVP (user brief; replaces spikes S-Model + S-Samples) | DONE (2026-10-17) | M1d | Real pretrained model behind `POST /api/v1/detect/fire`, temporal rule, evidence JPEG, tests, validation smoke test, Render memory/time measured |
 | M2-spikes (Map, Routing, Notify, Stations) | TODO | M1b | Q3–Q5 decided or fallback adopted, with evidence |
-| M3 Operational backend + persistent incidents (user brief) | IN_PROGRESS | M2 | Neon persistence, cameras/stations API, pending detections, confirm/reject, nearest available station, incident state machine + timeline; survives Render restart |
-| M4 Fire Department command center (user brief; replaces the jobs draft) | IN_PROGRESS | M3 | One-screen dashboard: map, cameras, stations, incidents, upload → review → confirm/reject → incident with candidate station and timeline; operator key server-side; tests/lint/typecheck/build pass; works on Vercel |
-| M5 Review/incident/notify/ack API | TODO | M3 | AC-06, 07, 09, 10, 11, 12, 13, 18 (pytest) |
+| M3 Operational backend + persistent incidents (user brief) | DONE (user-reported in the M5 brief, 2026-10-17) | M2 | Neon persistence, cameras/stations API, pending detections, confirm/reject, nearest available station, incident state machine + timeline; survives Render restart |
+| M4 Fire Department command center (user brief; replaces the jobs draft) | DONE (user-reported in the M5 brief, 2026-10-17) | M3 | One-screen dashboard: map, cameras, stations, incidents, upload → review → confirm/reject → incident with candidate station and timeline; operator key server-side; tests/lint/typecheck/build pass; works on Vercel |
+| M5 City intelligence upgrade (user brief) | IN_PROGRESS | M4 | Provenance-labelled city network, real-detector scenarios with automatic alerts and no auto-confirm, feed viewer, 3D map, clustering, road route with fallback; tests/build pass; works on Render + Vercel |
+| M5-draft Review/incident/notify/ack API | TODO (later) | M3 | AC-06, 07, 09, 10, 11, 12, 13, 18 (pytest) |
 | M6 Frontend vertical slice | TODO | M3 | VS1 script passes locally (manual), Vitest passes |
 | M7 VS1 integration + deploy ★ | TODO | M4, M5, M6 | AC-01, 02, 04, 06, 07, 09, 10, 12, 13, 15, 16; Playwright passes |
 | M8 Routing & route display | TODO | M7, S-Routing | AC-14 |
@@ -232,7 +238,7 @@ Scope set by the user's M2 brief (time-critical):
 - **Upload:** request total minus processing is 2.8–3.8 s.
 - **Projection for a 60 s 480p15 clip (not measured):** about 26–30 s processing plus upload.
 
-## M3 — Operational backend + persistent incident workflow (IN_PROGRESS)
+## M3 — Operational backend + persistent incident workflow (DONE, user-reported in the M5 brief)
 
 Scope set by the user's M3 brief (time-critical):
 - **Not in scope:** dashboard, map, notifications, routing API, police/ambulance, detector changes.
@@ -275,7 +281,7 @@ Unit tests use a scripted detector; the 2 real-model tests from M2 are unchanged
 - PATCH notified → acknowledged → resolved, then notified → `INVALID_STATE_TRANSITION`. Timeline: 6 events in order.
 - No errors in the server log.
 
-## M4 — Fire Department command center (IN_PROGRESS)
+## M4 — Fire Department command center (DONE, user-reported in the M5 brief)
 
 Scope set by the user's M4 brief:
 - **Not in scope:** police, ambulance, auth, admin, analytics, notifications, acknowledgement workflow, road routing, backend redesign, model tuning, extra pages, chatbot.
@@ -335,6 +341,96 @@ The new frontend tests cover:
 3. `.pr-marker { position: relative }` overrode marker positioning. Removed.
 4. The camera list overflowed (grid min-width). Fixed with `grid-cols-1`.
 
+## M5 — City intelligence upgrade (IN_PROGRESS)
+
+Scope set by the user's M5 brief:
+- P0: data, scenario engine, automatic alerts, feed viewer.
+- P1: 3D, clustering, routing.
+- P2: polish, and public feeds only if genuinely available.
+- **Not in scope:** police, ambulance, authentication, LLMs and unrelated features.
+- M2 is untouched: no model or threshold change.
+
+| ID | Task | Status | Notes / evidence |
+|---|---|---|---|
+| M5-T1 | Fire-response facilities | DONE (11, target 20–30 not met) | Overpass `amenity`/`emergency=fire_station`, plus a name search (fire/rescue/1122/brigade) and `building=fire_station`. **11 genuine distinct facilities.** <br>• Excluded: a trading company, a CNG pump, a duplicate node about 50 m away, an unnamed duplicate way, a "fire station" tagged as a tram stop next to Sohrab Goth (probable duplicate), and an SIEHS-1122 ambulance station. <br>• No station was invented. Fields: operator, `facility_type` (inferred), `source_ref`, unverified, `availability_is_demo`. |
+| M5-T2 | Monitoring network | DONE | **179 nodes**: 175 `simulated_coverage` on OSM major-road vertices in 23 zones (deterministic farthest-point sampling, ≥ 0.45 km apart), 3 `demo_stream`, 1 `verified_mapped`, **0 `public_live`**. <br>• Of 3 OSM surveillance features, 2 are CCTV businesses and were excluded. <br>• The M3 camera ids are kept. |
+| M5-T3 | Schema + migration | DONE | `0002`: camera provenance/stream columns, station operator/facility/demo flag, `incident.route`, `scenario_run`, timeline types. Forward-safe; verified by upgrading a copy of the M4 database with all rows kept. |
+| M5-T4 | Feed abstraction | DONE | `stream_type` hls/mjpeg/mp4_loop/none; `/api/v1/media/{name}` (whitelisted, Range); `CameraFeed` + `feedMode`; SIMULATED / PUBLIC labels; unavailable state. |
+| M5-T5 | Scenario engine | DONE | `seed/scenarios.json` (3 scenarios); start, worker `tick()`, claim by conditional update, real detector through the shared path, pending detection only on a confirmed result, never auto-confirm, reset, restart recovery, cancel-while-running. Off in production unless `SCENARIOS_ENABLED=true`. |
+| M5-T6 | Automatic alerts | DONE | A finished run triggers an immediate reload. Then: alert strip, Review count, amber pulsing marker, fly-to, activity entry, and the chime only if sound was enabled. |
+| M5-T7 | Camera viewer | DONE | Every camera opens a feed panel: name, location, coordinates, source type, monitoring status, feed status, last activity, live/simulated label. |
+| M5-T8 | 3D map | DONE | `fill-extrusion` from OpenFreeMap `building` at zoom ≥ 13.5, pitch 52°, 2D/3D toggle, fly-to, fit station + route + incident. Coverage is sparse in Karachi (K25). |
+| M5-T9 | Clustering | DONE | Quiet cameras in a clustered GeoJSON source; alerting, selected and feed cameras, incidents and stations stay individual markers. |
+| M5-T10 | Road routing | DONE | `app/routing`: OSRM provider (public demo server) behind a `RouteProvider` protocol. Stored on the incident with a `route_generated` event; on failure, a straight-line fallback with a `route_unavailable` event. Route panel and map line. |
+| M5-T11 | Polish | DONE | Status bar, activity tab and overview, scenario controls, feed frame, route tiles, marker states, legend. |
+| M5-T12 | City status bar + activity feed | DONE | All counts derived from API data; activity built only from real records plus this console's own actions. |
+| M5-T13 | Tests | DONE | API **135 passed** (26 new); web **71 passed** (20 new). |
+| M5-T14 | Docs | DONE | PRD §0, Techspec §14, Schema §4A, Appflow §1.2, Design §0.1, ImplementationPlan M5, READMEs, this section. |
+| M5-T15 | Render + Vercel redeploy + browser check (user) | NOT STARTED | **Next task.** |
+| M5-T16 | Mark M5 DONE | NOT STARTED | After T15 |
+
+**Tests (2026-10-17):**
+- API: `uv run pytest` **135 passed, 0 skipped** (the real-model scenario test ran), `ruff check` clean, `ruff format --check` clean (56 files).
+- Web: `npm test` **71 passed** (9 files); `npm run lint`, `npm run typecheck` and `npm run build` clean.
+
+The new API tests cover:
+- migration on existing M3 rows;
+- network bounds, uniqueness and spacing;
+- provenance per source type;
+- stations;
+- seed idempotency and no deletes;
+- media whitelist and Range;
+- the scenario config;
+- start auth and 409;
+- scheduling (not before the trigger);
+- detection only after the detector's result;
+- no auto-confirm;
+- the negative run;
+- detector failure;
+- confirming a scenario detection;
+- reset (scope, nothing deleted, upload data untouched);
+- cancel while running;
+- restart recovery;
+- production default off;
+- delay override;
+- the real-model Korangi scenario;
+- route success;
+- route failure fallback;
+- no station → no route;
+- OSRM parsing and URL;
+- network error wrapping;
+- the upload source tag.
+
+The new web tests cover:
+- the automated alert flow (no upload, no confirm, marker, fly-to, Review count, status bar, review panel with feed and scenario origin);
+- confirm with route (panel and map line);
+- scenario start and two-step reset (with an immediate reload);
+- status bar counts;
+- the no-feed camera;
+- feed modes;
+- the clustering split (each camera drawn exactly once; alerts never clustered);
+- city stats;
+- the activity feed;
+- the client scenario/media calls;
+- the proxy allowlist for scenarios.
+
+**Local end-to-end (2026-10-17).**
+- **Setup:**
+  - API: uvicorn on a copy of the M4 SQLite DB upgraded to `0002` and seeded, with the real model, the operator key, `SCENARIO_DELAY_OVERRIDE_S=20` and live OSRM.
+  - Web: `next start` with the same key.
+  - Browser: headless Chrome over CDP.
+- **Korangi fire:** Start → armed T−20 s → feed switched → real detector → **FIRE 0.7274, 38/57 frames**. Automatic alert "Possible FIRE detected at Korangi Industrial Area" with Review 1 and the map flown to Korangi in 3D. Review panel with SIMULATED LIVE FEED and "Automated demo scenario" → Confirm → **Manzoor Colony Fire Station 4.55 km straight-line; suggested route 9.3 km by road, about 12 min (OSRM)**. The route was drawn on the map. Timeline: Detected → Confirmed → Station selected → Suggested route.
+- **Clifton smoke** (started through the web proxy): **SMOKE 0.9268, 18/57** → reviewed at 1366×768 → rejected.
+- **Lyari sunset glare:** **not detected** (fire peak 0.5204 in 2 frames; the 3-of-5 rule was not met). No detection, no alert.
+- **Reset:**
+  - The open scenario incident was resolved by "Demo reset".
+  - The M4 upload incident was untouched.
+  - Nothing was deleted.
+  - Bug found: the UI showed the change only at the next poll. Fixed with an immediate reload after reset, and tested.
+- **Proxy:** foreign Origin → 403; direct API write without the key → 401.
+- **Bundle:** a sentinel-key build had 0 hits in `.next/static` (1 hit only in the local Turbopack cache, which is deleted after the check).
+- **Screenshots:** 1440×900 (armed, alert, review, incident with route) and 1366×768 (smoke review, Saddar street zoom in 3D, Lyari feed playing, activity).
+
 ## M4–M10
 
 M4 above follows the user's brief. The remaining planned milestones (jobs, notifications/ack, routing, polish, hardening) are defined in `ImplementationPlan.md` §2. They will be broken into tracked tasks here when each milestone starts, so this list does not go stale. All are **TODO**.
@@ -375,6 +471,14 @@ M4 above follows the user's brief. The remaining planned milestones (jobs, notif
 | D32 | Migrations + seed run in the Render **start** command | CONFIRMED (pending deploy) | The free tier has no pre-deploy hook; both are idempotent; a failure keeps the old deploy live |
 | D33 | One shared `OPERATOR_API_KEY` for writes; reads public; production without a key refuses writes (503) | CONFIRMED (M3) | A public URL must not allow anonymous incident creation. Reads are simulated/public data. Real operator accounts are later work. |
 | D34 | Fire stations from OSM (5 public KMC stations), unverified, availability as a demo flag | CONFIRMED | Overpass export 2026-10-17. Institutional brigades (CAA, AKU) and mis-tagged features were excluded. |
+| D40 | No official/SSCA CCTV. Every node carries `source_type` (`public_live`, `verified_mapped`, `simulated_coverage`, `demo_stream`) and a source reference; the UI labels each. | CONFIRMED (M5) | Brief's data-integrity rules. No lawful public Karachi stream was found, so `public_live` = 0. |
+| D41 | Coverage nodes are generated offline and deterministically on OSM major-road vertices (farthest-point sampling per zone, ≥ 0.45 km apart); the output JSON is committed | CONFIRMED (M5) | Repeatable, never on water or parks, no runtime Overpass dependency. |
+| D42 | Facilities: 11 real OSM elements; the 20–30 target was not padded | CONFIRMED (M5) | "Do not invent stations." A KMC address list without coordinates would need geocoding guesses. |
+| D43 | Scenario engine: in-process daemon thread + `scenario_run` table; scenarios use the same detection code as uploads; pending only, never auto-confirmed; off in production unless `SCENARIOS_ENABLED=true` | CONFIRMED (M5) | Single Render instance; a DB-claimed run survives restarts and cannot run twice. |
+| D44 | Three licensed demo clips are committed in `apps/api/demo_assets` (4.1 MB) with `SOURCES.md`; `/api/v1/media` serves only those | CONFIRMED (M5) | Render needs the files. Licences checked on archive.org: CC BY-NC-SA 2.5 (Jamestown fire, non-commercial), Public Domain Mark (1964 film), Public Domain (Santa Barbara street). |
+| D45 | Routing: OSRM public demo server behind a `RouteProvider` protocol, called once per confirmed incident server-side, result cached on `incident.route`; Haversine station selection kept | CONFIRMED (M5) | No key; ~0.6 s per request locally; light use fits its policy. ORS/GraphHopper need keys. Resolves Q4 for the demo. |
+| D46 | Map scale: clustered GeoJSON for quiet cameras, HTML markers for everything that needs attention; 3D by default (2D under reduced motion) | CONFIRMED (M5) | The brief allows 3D by default if it performs; 179 points as one source is cheap. Supersedes Techspec §7.2's "3D off by default". |
+| D47 | Scenario polling 2 s while a run is live, else 10 s; a finished run triggers an immediate detection reload | CONFIRMED (M5) | One request covers every scenario; the alert appears within ~2 s of the result instead of up to 10 s. |
 | D35 | Map: MapLibre GL JS **6.11.2** + OpenFreeMap "dark" style (free, no key, OSM data). The worker is copied to `public/vendor` at build time (`scripts/copy-maplibre-worker.mjs`). | CONFIRMED locally (M4) | Matches D8. Leaflet was not needed. OpenFreeMap needs no account. MapLibre 6 resolves its worker at runtime, which Turbopack cannot see. Answers the tile part of Q3. |
 | D36 | Operator writes go through a same-origin Next.js route handler (`/api/operator/*`) that adds `X-Operator-Key` from the server-only `OPERATOR_API_KEY`. Only three actions are allowlisted; cross-origin requests get 403. Reads go browser → API directly. | CONFIRMED (M4) | User brief: the key must never reach the browser. This is the smallest server boundary and needs no backend change. |
 | D37 | UI clip limit **4 MB** (API limit 20 MB) | CONFIRMED | Vercel Functions accept request bodies up to 4.5 MB. The M2 demo clips are 0.1–2.1 MB. |
@@ -389,8 +493,8 @@ M4 above follows the user's brief. The remaining planned milestones (jobs, notif
 |---|---|---|---|
 | Q1 | API host for the **heavy** workload (Render / Railway / Fly / HF Spaces) and deployed DB (Neon vs SQLite on volume). Render is the lightweight-deploy host (D16). | M1d | DB part: D24 recommends Neon in M3. Host part: pending the M1d-T6 Render numbers. |
 | Q2 | Fire/smoke model choice and licence (AGPL acceptable?) | M2 | DECIDED 2026-10-17: D26. AGPL-3.0 accepted for the public hackathon repo. **The user should confirm.** |
-| Q3 | Tile source (OpenFreeMap vs MapTiler) and 3D data quality | M2-S3 | Tile source DECIDED (D35: OpenFreeMap dark). 3D not evaluated (not in M4). |
-| Q4 | Routing provider | M2-S4 | TODO |
+| Q3 | Tile source (OpenFreeMap vs MapTiler) and 3D data quality | M2-S3 | DECIDED: OpenFreeMap dark (D35); 3D extrusion built in M5. OSM building coverage in Karachi is sparse (K25). |
+| Q4 | Routing provider | M2-S4 | DECIDED for the demo: OSRM public demo server (D45). Replace before any sustained use. |
 | Q5 | Email provider (Resend vs SMTP) and webhook demo target | M2-S5 | TODO |
 | Q6 | Sample clip sources | M2 | Validation clips from archive.org (see M2). Demo clips are still to be chosen. |
 | Q7 | Hackathon deadline date, team size, whether judges use the deployed app themselves, hosting accounts available | User | TODO |
@@ -427,6 +531,13 @@ M4 above follows the user's brief. The remaining planned milestones (jobs, notif
 | K19 | OpenFreeMap is a free community service with no SLA. If the style fails, the map shows "Map tiles unavailable" and markers still render on a plain background. | Low | OPEN |
 | K20 | Visual checks were done in headless Chrome with SwiftShader at 1440/1366/820 px. No physical-device or other-browser pass yet. | Low | OPEN until the user's M4-T13 check |
 | K21 | The Turbopack build cache (`.next/cache`) keeps build-time env values locally. It is git-ignored and never served, and the browser bundle is clean. | Low | Accepted. Delete `.next` before sharing a machine's build folder. |
+| K22 | The Haversine-nearest station is not always the road-nearest. Korangi: Manzoor Colony 4.55 km straight / 9.28 km road, Landhi 7.63 km straight / 9.05 km road. | Medium | OPEN. The brief keeps Haversine selection; rank the nearest 3 by road duration later (Techspec §7.3). |
+| K23 | OSRM public demo server: no SLA, light-use policy, free-flow durations (no traffic) | Medium | OPEN. Failure falls back to straight-line; self-host or keyed provider before sustained use. |
+| K24 | Only 11 fire-response facilities are verifiable in OSM (target 20–30); `facility_type` is inferred from names/operators | Medium | OPEN. Add facilities only with coordinates from a citable source. |
+| K25 | OSM building footprints in Karachi are sparse, so 3D extrusion shows few buildings in most districts | Low | OPEN. The 3D view still conveys depth via pitch; no fabricated buildings. |
+| K26 | No `public_live` feed integrated; all playable feeds are licensed sample footage on simulated nodes | Medium | OPEN by design (no lawful, stable public Karachi stream found). The HLS/MJPEG path exists for one. |
+| K27 | The scenario worker runs inside the single API process; Render free-tier sleep pauses it, and a run in progress at a restart is marked failed | Low | Accepted for the demo. Warm the API before starting a scenario. |
+| K28 | The Jamestown fire clip is CC BY-NC-SA 2.5: non-commercial use only, attribution and share-alike | Low | Recorded in `demo_assets/SOURCES.md`. Replace before any commercial use. |
 | K8 | Starlette spools the multipart upload to a temp file, then the endpoint copies it to its own temp file, so the upload is briefly on disk twice (≤ 40 MB at the 20 MB cap). | Low | Accepted for the spike |
 | K6 | ONNX Runtime 1.30 has no `manylinux_2_17` wheel. A host with glibc < 2.28 would fail to install it. | Low | OPEN until the Render build succeeds |
 
@@ -491,3 +602,13 @@ M4 above follows the user's brief. The remaining planned milestones (jobs, notif
 | 2026-10-17 | M4 proxy check (local) | curl against `next start` + uvicorn (key set on both) | Unknown path 404; foreign Origin 403; direct API write without key 401; detect via proxy → `detected fire 0.7274 pending` |
 | 2026-10-17 | M4 browser end-to-end (local) | Headless Chrome over CDP: confirm, negative and reject flows; screenshots at 1440×900, 1366×768, 820×900 | All three flows behaved as specified (details in the M4 section) |
 | 2026-10-17 | Independent check of Vercel page | Claude: `curl -I` | 403 with `X-Vercel-Mitigated: challenge`. Vercel bot protection blocks non-browser clients. This is not a deployment fault. |
+| 2026-10-17 | M5 OSM extracts | Overpass API (user agent set; retried with backoff on 502/504) | Fire stations: 15 raw → 11 genuine. Name search: 36 features, no new facility. Surveillance: 3 features → 1 plain camera point. Major roads: 2,930 ways. |
+| 2026-10-17 | M5 network generation | `uv run python seed/build_karachi_network.py <exports>` | 179 cameras {simulated_coverage 175, demo_stream 3, verified_mapped 1}; 11 stations. Tariq Road corridor 3/4 (spacing limit). |
+| 2026-10-17 | M5 demo clip licences | archive.org metadata API | Jamestown fire CC BY-NC-SA 2.5 (Tom Simpson); *Structure Fire Control Tactics* Public Domain Mark 1.0; Santa Barbara street Public Domain |
+| 2026-10-17 | M5 migration on M4 data | Copy of the M4 SQLite DB: `alembic upgrade head` + seed | 0001 → 0002. Rows kept: 8 cameras, 5 stations, 2 detections, 1 incident, 3 timeline events. After the seed: 179 cameras, 11 stations. |
+| 2026-10-17 | M5 OSRM live check | `OsrmRouteProvider` against router.project-osrm.org | Manzoor Colony → Korangi 9.28 km / 11.7 min (straight 4.55); Saddar → Clifton 5.56 km / 6.6 min; Landhi → Korangi 9.05 km / 11.0 min; ~0.6 s each |
+| 2026-10-17 | M5 API checks | `uv run pytest` · `ruff check .` · `ruff format --check .` | **135 passed**, 0 skipped · all checks passed · 56 files formatted |
+| 2026-10-17 | M5 web checks | `npm test` · `npm run lint` · `npm run typecheck` · `npm run build` | **71 passed** (9 files) · clean · OK · compiled |
+| 2026-10-17 | M5 scenarios on the real model (local) | Three runs through the web proxy / UI | Korangi FIRE 0.7274 38/57 (7.9 s); Clifton SMOKE 0.9268 18/57 (1.8 s); Lyari not detected, fire peak 0.5204 in 2 frames (1.8 s) |
+| 2026-10-17 | M5 browser end-to-end (local) | Headless Chrome over CDP, 1440×900 and 1366×768 | Automatic alert → review → confirm → route drawn; smoke reject; feed playing (`readyState` 4); reset (UI reload bug found and fixed) |
+| 2026-10-17 | M5 secret check | Build with `OPERATOR_API_KEY=SENTINEL-…`; `grep -rl` in `.next/static` | 0 files contain the value |

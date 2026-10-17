@@ -4,6 +4,24 @@
 export type EventType = "fire" | "smoke" | "fire_smoke";
 export type Severity = "low" | "medium" | "high";
 export type CameraStatus = "active" | "offline" | "maintenance";
+/** M5 provenance: what the node really is (Schema.md). */
+export type SourceType = "public_live" | "verified_mapped" | "simulated_coverage" | "demo_stream";
+export type StreamType = "hls" | "mjpeg" | "mp4_loop" | "none";
+/** What PehRadar actually does with the node (serializers.monitoring_status). */
+export type MonitoringStatus =
+  | "monitoring"
+  | "simulated"
+  | "not_connected"
+  | "offline"
+  | "maintenance";
+export type FacilityType =
+  | "municipal_fire_station"
+  | "port_fire_station"
+  | "airport_fire_station"
+  | "industrial_fire_station"
+  | "rescue_station"
+  | "institutional_fire_response"
+  | "fire_station_unclassified";
 export type StationStatus = "available" | "unavailable";
 export type ReviewStatus = "pending" | "confirmed" | "rejected";
 export type IncidentStatus =
@@ -19,6 +37,8 @@ export type TimelineEventType =
   | "operator_confirmed"
   | "station_selected"
   | "no_station_available"
+  | "route_generated"
+  | "route_unavailable"
   | "status_changed"
   | "resolved"
   | "rejected";
@@ -33,6 +53,14 @@ export interface Camera {
   department: string;
   status: CameraStatus;
   is_simulated: boolean;
+  district: string | null;
+  camera_type: string;
+  source_type: SourceType;
+  source_reference: string | null;
+  stream_type: StreamType;
+  /** API-relative for demo loops (/api/v1/media/...), absolute only for public_live. */
+  stream_url: string | null;
+  monitoring_status: MonitoringStatus;
   created_at: string | null;
 }
 
@@ -50,6 +78,9 @@ export interface FireStation {
   source_ref: string | null;
   licence: string | null;
   verification_status: "unverified" | "verified";
+  operator: string | null;
+  facility_type: FacilityType;
+  availability_is_demo: boolean;
   created_at: string | null;
 }
 
@@ -85,6 +116,10 @@ export interface DetectionDetails {
   rule: string;
   video: VideoInfo;
   boxes: EvidenceBox[];
+  /** M5: where the clip came from. Older rows have no source. */
+  source?:
+    | { kind: "upload" }
+    | { kind: "scenario"; scenario_id: string; scenario_run_id: string; video_asset: string };
 }
 
 export interface Detection {
@@ -129,10 +164,38 @@ export interface Incident {
   confirmed_by: string | null;
   confirmed_at: string | null;
   resolved_at: string | null;
+  /** Suggested response route; lists omit `geometry`. */
+  route: IncidentRoute | null;
   is_simulated: boolean;
   created_at: string | null;
   updated_at: string | null;
 }
+
+export type IncidentRoute =
+  | {
+      status: "ok";
+      provider: string;
+      profile: string;
+      from_station_id: string;
+      distance_km: number;
+      duration_min: number;
+      straight_line_km: number;
+      geometry?: { type: "LineString"; coordinates: [number, number][] };
+      generated_at: string;
+      is_estimate: true;
+      note: string;
+    }
+  | {
+      status: "unavailable";
+      provider: string | null;
+      from_station_id: string;
+      reason: string;
+      fallback: "straight_line";
+      straight_line_km: number;
+      generated_at: string;
+      is_estimate: true;
+      note: string;
+    };
 
 export interface TimelineEvent {
   id: string;
@@ -177,4 +240,67 @@ export interface DetectionResult {
 export interface ReviewInput {
   operator?: string;
   note?: string;
+}
+
+export type ScenarioRunStatus =
+  | "scheduled"
+  | "running"
+  | "detected"
+  | "not_detected"
+  | "failed"
+  | "cancelled";
+
+/** Real detector output recorded on the run (services/scenarios.summarize). */
+export interface ScenarioResult {
+  status: "detected" | "not_detected";
+  event_type: EventType | null;
+  confidence: number;
+  sampled_frames: number;
+  positive_frames: number;
+  processing_seconds: number;
+  model: string;
+  rule: string;
+  classes: Record<string, { confirmed: boolean; peak_confidence: number; positive_frames: number }>;
+}
+
+export interface ScenarioRun {
+  id: string;
+  scenario_id: string;
+  camera_id: string;
+  video_asset: string;
+  video_url: string;
+  status: ScenarioRunStatus;
+  started_by: string | null;
+  trigger_at: string;
+  triggered_at: string | null;
+  completed_at: string | null;
+  detection_event_id: string | null;
+  result: ScenarioResult | null;
+  error: string | null;
+  created_at: string | null;
+}
+
+export interface Scenario {
+  id: string;
+  name: string;
+  description: string;
+  camera_id: string | null;
+  camera_code: string;
+  video_asset: string;
+  trigger_after_seconds: number;
+  expected_behavior: "fire_detected" | "smoke_detected" | "no_detection";
+  latest_run: ScenarioRun | null;
+}
+
+export interface ScenarioList {
+  enabled: boolean;
+  server_time: string;
+  disclaimer?: string;
+  items: Scenario[];
+}
+
+export interface ResetResult {
+  runs_cancelled: number;
+  detections_closed: number;
+  incidents_closed: number;
 }

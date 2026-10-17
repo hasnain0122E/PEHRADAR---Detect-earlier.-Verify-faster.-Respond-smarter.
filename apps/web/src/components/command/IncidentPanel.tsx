@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 
 import type { OpsApi } from "@/lib/api/client";
-import type { FireStation, IncidentDetail, TimelineEvent } from "@/lib/api/types";
+import type { FireStation, IncidentDetail, IncidentRoute, TimelineEvent } from "@/lib/api/types";
+import { FACILITY_LABEL } from "@/lib/city";
 import { confidence, EVENT_LABEL, pktDateTime, pktTime, timelineView } from "@/lib/ops";
 
 import { describeError } from "./useOpsData";
@@ -22,6 +23,7 @@ import {
 
 export const CANDIDATE_DISCLAIMER =
   "Candidate station based on geographic proximity. Not a dispatch confirmation.";
+export const ROUTE_DISCLAIMER = "Route is an estimate. Not a dispatch confirmation.";
 
 interface IncidentPanelProps {
   incidentId: string;
@@ -31,9 +33,11 @@ interface IncidentPanelProps {
   api: OpsApi;
   notice: string | null;
   onSelectStation: (id: string) => void;
+  /** Reports the loaded detail (the map draws its route geometry). */
+  onLoaded?: (detail: IncidentDetail) => void;
 }
 
-export function IncidentPanel({ incidentId, version, initial, api, notice, onSelectStation }: IncidentPanelProps) {
+export function IncidentPanel({ incidentId, version, initial, api, notice, onSelectStation, onLoaded }: IncidentPanelProps) {
   const [loaded, setLoaded] = useState<IncidentDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -46,11 +50,14 @@ export function IncidentPanel({ incidentId, version, initial, api, notice, onSel
       .then((detail) => {
         setLoaded(detail);
         setError(null);
+        onLoaded?.(detail);
       })
       .catch((err: unknown) => {
         if (!controller.signal.aborted) setError(describeError(err, "Could not load the incident"));
       });
     return () => controller.abort();
+    // onLoaded is a notification only; re-fetching when it changes identity is not wanted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [api, incidentId, version, attempt]);
 
   if (!incident) {
@@ -117,11 +124,14 @@ export function IncidentPanel({ incidentId, version, initial, api, notice, onSel
           <span id="station-title">Candidate fire station</span>
         </SectionTitle>
         {selection ? (
-          <StationSummary
-            station={selection.station}
-            distanceKm={selection.distance_km}
-            onSelect={() => onSelectStation(selection.station.id)}
-          />
+          <>
+            <StationSummary
+              station={selection.station}
+              distanceKm={selection.distance_km}
+              onSelect={() => onSelectStation(selection.station.id)}
+            />
+            <RouteSummary route={incident.route} />
+          </>
         ) : (
           <p className="text-sm text-review">
             No fire station is marked available in the demo data, so no candidate was selected.
@@ -131,6 +141,44 @@ export function IncidentPanel({ incidentId, version, initial, api, notice, onSel
       </section>
 
       <Timeline events={incident.timeline} />
+    </div>
+  );
+}
+
+function RouteSummary({ route }: { route: IncidentRoute | null }) {
+  if (!route) {
+    return <p className="text-xs text-ink-300">No suggested road route recorded for this incident.</p>;
+  }
+  if (route.status !== "ok") {
+    return (
+      <div className="grid gap-1 border-t border-ink-700 pt-2">
+        <p className="text-xs font-medium tracking-wider text-ink-300 uppercase">Suggested response route</p>
+        <p className="text-sm text-review">Road route unavailable; straight-line distance shown.</p>
+        <p className="text-xs text-ink-300">{route.reason}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-2 border-t border-ink-700 pt-2">
+      <p className="flex items-center gap-2 text-xs font-medium tracking-wider text-notified uppercase">
+        <span aria-hidden className="legend-route" /> Suggested response route
+      </p>
+      <dl className="grid grid-cols-2 gap-2">
+        <div className="rounded-sm border border-ink-700 bg-ink-900 px-2.5 py-1.5">
+          <dt className="text-[11px] text-ink-300">Road distance</dt>
+          <dd className="font-mono text-lg font-semibold tabular-nums">{route.distance_km.toFixed(1)} km</dd>
+        </div>
+        <div className="rounded-sm border border-ink-700 bg-ink-900 px-2.5 py-1.5">
+          <dt className="text-[11px] text-ink-300">Estimated travel</dt>
+          <dd className="font-mono text-lg font-semibold tabular-nums">{Math.max(1, Math.round(route.duration_min))} min</dd>
+        </div>
+      </dl>
+      <p className="text-[11px] text-ink-500">
+        {route.provider.toUpperCase()} {route.profile} estimate on OpenStreetMap roads, generated{" "}
+        {pktTime(route.generated_at)} PKT. Free-flow travel time: no traffic, signals or
+        emergency-vehicle rules.
+      </p>
+      <p className="border-l-2 border-notified pl-3 text-sm">{ROUTE_DISCLAIMER}</p>
     </div>
   );
 }
@@ -158,6 +206,7 @@ function StationSummary({
           {station.data_source.toUpperCase()} · {station.verification_status}
         </ProvenanceBadge>
       </div>
+      <p className="text-xs text-ink-300">{FACILITY_LABEL[station.facility_type]}</p>
       <p className="text-sm">
         <Mono>{distanceKm.toFixed(2)} km</Mono>{" "}
         <span className="text-ink-300">straight-line distance (not a driving route or ETA)</span>
@@ -239,6 +288,8 @@ export function StationPanel({ station }: { station: FireStation }) {
             </span>,
           ],
           ["Code", <Mono key="c">{station.code}</Mono>],
+          ["Facility type", `${FACILITY_LABEL[station.facility_type]} (inferred from OSM name/operator)`],
+          ["Operator", station.operator ?? "Not recorded in the source"],
           [
             "Coordinates",
             <Mono key="x">

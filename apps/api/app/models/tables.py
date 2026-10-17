@@ -19,12 +19,16 @@ from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 
 from app.db import Base, UTCDateTime, utc_now
 from app.domain.incident_rules import (
+    CAMERA_SOURCE_TYPES,
     CAMERA_STATUSES,
     DETECTION_EVENT_TYPES,
+    FACILITY_TYPES,
     INCIDENT_STATUSES,
     REVIEW_STATUSES,
+    SCENARIO_RUN_STATUSES,
     SEVERITIES,
     STATION_STATUSES,
+    STREAM_TYPES,
     TIMELINE_ACTORS,
     TIMELINE_EVENT_TYPES,
 )
@@ -52,6 +56,8 @@ class Camera(Base):
     __tablename__ = "camera"
     __table_args__ = (
         CheckConstraint(_in("status", CAMERA_STATUSES), name="ck_camera_status"),
+        CheckConstraint(_in("source_type", CAMERA_SOURCE_TYPES), name="ck_camera_source_type"),
+        CheckConstraint(_in("stream_type", STREAM_TYPES), name="ck_camera_stream_type"),
         _karachi("camera"),
     )
 
@@ -64,6 +70,15 @@ class Camera(Base):
     department: Mapped[str] = mapped_column(String(20), default="fire")
     status: Mapped[str] = mapped_column(String(20), default="active")
     is_simulated: Mapped[bool] = mapped_column(Boolean, default=True)
+    # M5 monitoring network and provenance (Schema.md). Only public_live may carry an external
+    # stream_url; demo_stream nodes loop a licensed file named by feed_asset.
+    district: Mapped[str | None] = mapped_column(String(60))
+    camera_type: Mapped[str] = mapped_column(String(30), default="fixed_cctv")
+    source_type: Mapped[str] = mapped_column(String(30), default="simulated_coverage")
+    source_reference: Mapped[str | None] = mapped_column(String(300))
+    stream_type: Mapped[str] = mapped_column(String(20), default="none")
+    stream_url: Mapped[str | None] = mapped_column(String(500))
+    feed_asset: Mapped[str | None] = mapped_column(String(80))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now, onupdate=utc_now)
 
@@ -76,6 +91,7 @@ class FireStation(Base):
             _in("verification_status", ("unverified", "verified")),
             name="ck_fire_station_verification",
         ),
+        CheckConstraint(_in("facility_type", FACILITY_TYPES), name="ck_fire_station_facility"),
         _karachi("fire_station"),
     )
 
@@ -92,6 +108,9 @@ class FireStation(Base):
     source_ref: Mapped[str | None] = mapped_column(String(200))
     licence: Mapped[str | None] = mapped_column(String(50))
     verification_status: Mapped[str] = mapped_column(String(20), default="unverified")
+    operator: Mapped[str | None] = mapped_column(String(160))
+    facility_type: Mapped[str] = mapped_column(String(40), default="fire_station_unclassified")
+    availability_is_demo: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now, onupdate=utc_now)
 
@@ -151,6 +170,9 @@ class Incident(Base):
     confirmed_by: Mapped[str | None] = mapped_column(String(80))
     confirmed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     resolved_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    # M5: suggested road route from the candidate station (app.routing), or the straight-line
+    # fallback when routing failed. An estimate, never a dispatch.
+    route: Mapped[dict | None] = mapped_column(JSON)
     is_simulated: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now, onupdate=utc_now)
@@ -185,3 +207,30 @@ class IncidentTimelineEvent(Base):
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
 
     incident: Mapped[Incident] = relationship(back_populates="timeline")
+
+
+class ScenarioRun(Base):
+    """One run of a configured demo scenario (seed/scenarios.json). The scenario engine runs the
+    scenario's clip through the real detector when trigger_at passes; a positive result becomes
+    an ordinary pending DetectionEvent. A run never confirms anything."""
+
+    __tablename__ = "scenario_run"
+    __table_args__ = (
+        CheckConstraint(_in("status", SCENARIO_RUN_STATUSES), name="ck_scenario_run_status"),
+        Index("ix_scenario_run_status_trigger", "status", "trigger_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    scenario_id: Mapped[str] = mapped_column(String(60), index=True)
+    camera_id: Mapped[str] = mapped_column(ForeignKey("camera.id"))
+    video_asset: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(20), default="scheduled")
+    started_by: Mapped[str | None] = mapped_column(String(80))
+    trigger_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    triggered_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    detection_event_id: Mapped[str | None] = mapped_column(ForeignKey("detection_event.id"))
+    # Real detector output summary: status, event type, confidence, frame counts, per-class peaks.
+    result: Mapped[dict | None] = mapped_column(JSON)
+    error: Mapped[str | None] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)

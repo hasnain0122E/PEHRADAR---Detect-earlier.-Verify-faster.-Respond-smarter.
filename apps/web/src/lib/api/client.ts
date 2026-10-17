@@ -5,7 +5,11 @@ import type {
   FireStation,
   Incident,
   IncidentDetail,
+  ResetResult,
   ReviewInput,
+  Scenario,
+  ScenarioList,
+  ScenarioRun,
 } from "./types";
 
 export type ApiErrorKind = "network" | "timeout" | "http" | "unauthorized" | "invalid_response";
@@ -168,8 +172,13 @@ export interface OpsApi {
   analyzeFootage(cameraId: string, file: File, options?: AnalyzeOptions): Promise<DetectionResult>;
   confirmDetection(id: string, input?: ReviewInput): Promise<IncidentDetail>;
   rejectDetection(id: string, input?: ReviewInput): Promise<Detection>;
+  listScenarios(signal?: AbortSignal): Promise<ScenarioList>;
+  startScenario(id: string): Promise<ScenarioRun>;
+  resetScenarios(): Promise<ResetResult>;
   /** Absolute URL for an API-relative evidence path (images load directly from the API). */
   evidenceSrc(path: string | null): string | null;
+  /** Playable URL for a camera stream: API-relative demo media, or an absolute https stream. */
+  mediaSrc(url: string | null): string | null;
 }
 
 export interface OpsApiConfig {
@@ -224,18 +233,17 @@ export function createOpsApi(config: OpsApiConfig): OpsApi {
   const read = { baseUrl: apiBaseUrl, fetchImpl, timeoutMs: READ_TIMEOUT_MS };
   const proxy = `${proxyBaseUrl}${OPERATOR_PROXY_PATH}`;
 
+  const write = (path: string, input: object = {}) =>
+    requestJson(`${OPERATOR_PROXY_PATH}/${path}`, {
+      baseUrl: proxyBaseUrl,
+      fetchImpl,
+      timeoutMs: WRITE_TIMEOUT_MS,
+      method: "POST",
+      body: JSON.stringify({ operator: OPERATOR_LABEL, ...input }),
+      contentType: "application/json",
+    });
   const review = (id: string, action: "confirm" | "reject", input: ReviewInput = {}) =>
-    requestJson(
-      `${OPERATOR_PROXY_PATH}/detections/${encodeURIComponent(id)}/${action}`,
-      {
-        baseUrl: proxyBaseUrl,
-        fetchImpl,
-        timeoutMs: WRITE_TIMEOUT_MS,
-        method: "POST",
-        body: JSON.stringify({ operator: OPERATOR_LABEL, ...input }),
-        contentType: "application/json",
-      },
-    );
+    write(`detections/${encodeURIComponent(id)}/${action}`, input);
 
   return {
     listCameras: async (signal) =>
@@ -274,6 +282,28 @@ export function createOpsApi(config: OpsApiConfig): OpsApi {
       object<IncidentDetail>(await review(id, "confirm", input), "Incident"),
     rejectDetection: async (id, input) =>
       object<Detection>(await review(id, "reject", input), "Detection"),
+    listScenarios: async (signal) => {
+      const body = await requestJson("/api/v1/scenarios", read, signal);
+      if (typeof (body as { enabled?: unknown })?.enabled !== "boolean") {
+        throw new ApiError("invalid_response", "Scenarios response did not match the contract");
+      }
+      items<Scenario>(body, "Scenarios");
+      return body as ScenarioList;
+    },
+    startScenario: async (id) =>
+      object<ScenarioRun>(await write(`scenarios/${encodeURIComponent(id)}/start`), "Scenario run"),
+    resetScenarios: async () => {
+      const body = await write("scenarios/reset");
+      if (typeof (body as { runs_cancelled?: unknown })?.runs_cancelled !== "number") {
+        throw new ApiError("invalid_response", "Reset response did not match the contract");
+      }
+      return body as ResetResult;
+    },
     evidenceSrc: (path) => (path ? `${apiBaseUrl}${path}` : null),
+    mediaSrc: (url) => {
+      if (!url) return null;
+      if (url.startsWith("/")) return `${apiBaseUrl}${url}`;
+      return url.startsWith("https://") ? url : null; // a public stream must be https
+    },
   };
 }

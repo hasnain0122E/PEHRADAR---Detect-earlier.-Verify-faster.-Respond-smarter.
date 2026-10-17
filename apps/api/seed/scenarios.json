@@ -1,0 +1,35 @@
+{
+  "_about": "PehRadar M5 demo scenarios. Each run plays a licensed sample clip (demo_assets/SOURCES.md) on a SIMULATED demo-stream node and runs it through the real fire/smoke detector when trigger_after_seconds pass. A positive result becomes a pending detection for operator review; nothing is ever auto-confirmed. expected_behavior documents the intended outcome; the real model decides the actual one.",
+  "scenarios": [
+    {
+      "id": "korangi-industrial-fire",
+      "name": "Korangi industrial fire",
+      "enabled": true,
+      "camera_code": "KHI-CAM-03",
+      "video_asset": "fire_jamestown_night.mp4",
+      "trigger_after_seconds": 45,
+      "expected_behavior": "fire_detected",
+      "description": "Night building fire on the Korangi Industrial Area node. Expected: a pending FIRE detection for operator review."
+    },
+    {
+      "id": "clifton-structure-smoke",
+      "name": "Clifton structure smoke",
+      "enabled": true,
+      "camera_code": "KHI-CAM-02",
+      "video_asset": "smoke_structure_1964.mp4",
+      "trigger_after_seconds": 30,
+      "expected_behavior": "smoke_detected",
+      "description": "Heavy structure smoke on the Clifton Boat Basin node. Expected: a pending SMOKE detection for operator review."
+    },
+    {
+      "id": "lyari-sunset-glare",
+      "name": "Lyari sunset glare (false-alarm lookalike)",
+      "enabled": true,
+      "camera_code": "KHI-CAM-07",
+      "video_asset": "street_sunset_traffic.mp4",
+      "trigger_after_seconds": 20,
+      "expected_behavior": "no_detection",
+      "description": "Orange sunset glare and tail lights on the Lyari node. Expected: the temporal rule does not confirm fire or smoke, so no detection is created."
+    }
+  ]
+}

@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 
 import type { Camera, DetectionResult } from "@/lib/api/types";
+import { MONITORING_VIEW, SOURCE_VIEW } from "@/lib/city";
 import {
   formatBytes,
   MAX_UPLOAD_BYTES,
+  pktDateTime,
   MAX_VIDEO_SECONDS,
   peakConfidence,
   validateClip,
@@ -18,9 +20,9 @@ import {
   Facts,
   InlineError,
   Mono,
-  ProvenanceBadge,
   SectionTitle,
 } from "./ui";
+import { CameraFeed, type FeedMode } from "./CameraFeed";
 
 /** One analysis at a time: the API processes a single video at once. */
 export type AnalysisState =
@@ -40,6 +42,20 @@ interface CameraPanelProps {
   onAnalyze: (file: File) => void;
   onReset: () => void;
   onOpenReview: () => void;
+  feed: FeedMode;
+  /** Latest real event on this camera (detection or incident), if any. */
+  lastActivity: string | null;
+  /** Demo scenario on this node: name and run state, if one is configured. */
+  scenarioNote: string | null;
+}
+
+export function SourceBadge({ camera }: { camera: Camera }) {
+  const view = SOURCE_VIEW[camera.source_type];
+  return (
+    <span className={`inline-flex items-center rounded-sm border px-1.5 text-[11px] leading-4 font-medium tracking-wide uppercase ${view.tone}`}>
+      {view.short}
+    </span>
+  );
 }
 
 export function CameraPanel(props: CameraPanelProps) {
@@ -49,31 +65,48 @@ export function CameraPanel(props: CameraPanelProps) {
   return (
     <div className="grid gap-5">
       <header>
-        <div className="flex flex-wrap items-center gap-2">
+        <p className="font-mono text-[11px] tracking-wider text-ink-500 uppercase">
+          {camera.code} · {camera.district ?? "Karachi"}
+        </p>
+        <div className="mt-0.5 flex flex-wrap items-center gap-2">
           <h2 className="text-lg font-semibold">{camera.name}</h2>
-          {camera.is_simulated && <ProvenanceBadge>Simulated camera</ProvenanceBadge>}
+          <SourceBadge camera={camera} />
         </div>
         <p className="mt-0.5 text-sm text-ink-300">{camera.location_label}</p>
       </header>
+
+      <CameraFeed camera={camera} mode={props.feed} />
 
       <Facts
         rows={[
           ["Camera code", <Mono key="c">{camera.code}</Mono>],
           [
-            "Status",
-            <span key="s" className={camera.status === "active" ? "text-ack" : "text-ink-300"}>
-              {camera.status === "active" ? "● Active" : `○ ${camera.status}`}
+            "Monitoring",
+            <span key="s" className={MONITORING_VIEW[camera.monitoring_status].tone}>
+              {MONITORING_VIEW[camera.monitoring_status].label}
             </span>,
           ],
-          ["Department", <span key="d" className="capitalize">{camera.department}</span>],
+          [
+            "Feed",
+            <span key="f" className={props.feed.kind === "none" ? "text-ink-300" : "text-ack"}>
+              {props.feed.kind === "none" ? "No stream" : `${props.feed.label.toLowerCase()} (${camera.stream_type})`}
+            </span>,
+          ],
+          ["Source type", SOURCE_VIEW[camera.source_type].label],
+          ["Source", <span key="r" className="text-xs text-ink-300">{camera.source_reference ?? "—"}</span>],
+          ["Last activity", props.lastActivity ? pktDateTime(props.lastActivity) : "No detections recorded"],
           [
             "Coordinates",
             <Mono key="x">
-              {camera.latitude.toFixed(4)}, {camera.longitude.toFixed(4)}
+              {camera.latitude.toFixed(5)}, {camera.longitude.toFixed(5)}
             </Mono>,
           ],
         ]}
       />
+
+      {props.scenarioNote && (
+        <p className="border-l-2 border-notified pl-3 text-xs text-ink-300">{props.scenarioNote}</p>
+      )}
 
       {pendingCount > 0 && (
         <button type="button" onClick={onOpenReview} className={`${BUTTON_SECONDARY} border-review/60 text-review`}>
@@ -83,12 +116,12 @@ export function CameraPanel(props: CameraPanelProps) {
 
       <section aria-labelledby="analyze-title" className="grid gap-3 rounded-md border border-ink-700 bg-ink-850 p-4">
         <SectionTitle>
-          <span id="analyze-title">Analyze test footage</span>
+          <span id="analyze-title">Diagnostic: analyze a clip</span>
         </SectionTitle>
         <p className="text-xs text-ink-300">
-          Demo input: this camera is simulated, so a pre-recorded MP4 stands in for its feed. The
-          API analyzes the clip, keeps only one evidence frame if it detects something, and deletes
-          the video.
+          Fallback to the automated scenarios: upload a pre-recorded MP4 as this node&apos;s input. The
+          API analyzes it with the same detector, keeps one evidence frame if it detects something,
+          and deletes the video.
         </p>
 
         {mine?.phase === "uploading" || mine?.phase === "analyzing" ? (

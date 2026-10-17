@@ -98,6 +98,26 @@ confirmed → station_selected → notified → acknowledged → resolved
 
 **Severity:** `fire_smoke` → high; `fire` → high at ≥ 0.70, otherwise medium; `smoke` → medium at ≥ 0.80, otherwise low.
 
+## Monitoring network, scenarios and routing (M5)
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/api/v1/scenarios` | Configured scenarios with each one's latest run (`enabled: false` when off) |
+| POST | `/api/v1/scenarios/{id}/start` | Operator. Schedules a run; 409 `SCENARIO_ALREADY_RUNNING` while one is active |
+| POST | `/api/v1/scenarios/reset` | Operator. Cancels unfinished runs, rejects pending scenario detections, resolves open scenario incidents. Deletes nothing. |
+| GET | `/api/v1/media/{name}` | Licensed demo clips from `demo_assets/` (Range supported) |
+
+**Data.**
+- `seed/karachi_network.json` holds 179 nodes (175 `simulated_coverage`, 3 `demo_stream`, 1 `verified_mapped`, 0 `public_live`) and 11 OSM fire-response facilities.
+- Regenerate it with `uv run python seed/build_karachi_network.py <dir with Overpass exports>`; the queries are in the script header.
+- **No official or Safe City CCTV is connected.**
+
+**Scenarios** (`seed/scenarios.json`):
+- Korangi fire (`KHI-CAM-03`), Clifton smoke (`KHI-CAM-02`) and Lyari sunset glare (`KHI-CAM-07`, a negative lookalike).
+- Each run passes the clip through the real detector. A confirmed result becomes a **pending** detection; nothing is ever auto-confirmed.
+
+**Routing.** After confirmation, `incident.route` holds an OSRM road route from the candidate station, or a straight-line fallback with the reason (`app/routing`).
+
 ## Configuration
 
 | Variable | Default | Notes |
@@ -116,6 +136,10 @@ confirmed → station_selected → notified → acknowledged → resolved
 | `EVIDENCE_DIR` / `EVIDENCE_MAX_FILES` | system temp / `20` | Evidence JPEG storage (ephemeral) |
 | `DATABASE_URL` | unset → `sqlite:///./pehradar-dev.db` | **Required in production** and must be PostgreSQL, or the app refuses to start. Neon URLs (`postgresql://…?sslmode=require`) are switched to the psycopg 3 driver automatically. |
 | `OPERATOR_API_KEY` | unset | Shared key for writes (`X-Operator-Key`). Unset in production → writes return 503. Unset in dev/test → writes allowed. |
+| `SCENARIOS_ENABLED` | unset: on outside production, **off in production** | M5 demo scenario engine. Set `true` on the demo deployment. |
+| `SCENARIO_DELAY_OVERRIDE_S` | unset | One trigger delay for every scenario |
+| `SCENARIO_WORKER` | `true` | Background thread that triggers due runs (tests drive `tick()` instead) |
+| `ROUTING_PROVIDER` / `OSRM_BASE_URL` / `ROUTING_TIMEOUT_S` | `osrm` / `https://router.project-osrm.org` / `8` | Suggested response route; `none` disables it (straight-line fallback) |
 | `CV_RUNTIME_CHECK` | `false` | M1c spike: startup self-check log line |
 | `VIDEO_TEST_ENABLED` | `false` | M1d diagnostics: mounts `POST /api/v1/video/test` (decode metrics, no detection) |
 
@@ -140,13 +164,16 @@ app/
                  (operator key), serializers, uploads (shared MP4 guards), video_test
   db.py          engine/session (psycopg 3 / SQLite), UTC datetime type
   models/        ORM tables: camera, fire_station, detection_event, incident, incident_timeline_event
-  services/      operations.py: record/confirm/reject detections, station selection, status, timeline
-  seed.py        idempotent Karachi seed loader (seed/karachi_demo.json)
+  services/      operations.py: record/confirm/reject detections, station selection, route, status,
+                 timeline, demo reset; fire_detection.py: shared detect path; scenarios.py: engine
+  routing/       RouteProvider, OSRM client, straight-line fallback
+  seed.py        idempotent Karachi seed loader (seed/karachi_network.json)
   domain/        fire_decision.py (temporal confirmation), incident_rules.py (states, severity, Haversine)
   detection/     video sampling, fire_model (ONNX pre/post-processing), fire_pipeline, evidence,
                  fetch_model, validate_clips, benchmark, runtime_check, memory
-alembic/         migrations (0001 = M3 schema); URL comes from DATABASE_URL
-seed/            karachi_demo.json (simulated cameras, OSM stations)
+alembic/         migrations (0001 = M3 schema, 0002 = M5 network/scenarios/routes); URL from DATABASE_URL
+seed/            karachi_network.json (+ build_karachi_network.py), scenarios.json
+demo_assets/     licensed demo clips + SOURCES.md (committed deliberately)
 models/          README.md (provenance); *.onnx downloaded, git-ignored
 tests/           pytest (unit tests use a scripted detector; 2 real-model integration tests)
 ```

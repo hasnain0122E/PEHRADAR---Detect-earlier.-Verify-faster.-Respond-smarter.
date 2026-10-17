@@ -44,6 +44,8 @@ uploads/
 # Video is ignored everywhere so footage can never be committed by accident. A clip whose
 # licence allows redistribution must be added deliberately with `git add -f`.
 *.mp4
+# M5: licensed demo clips the scenario engine needs on Render (licences in SOURCES.md).
+!apps/api/demo_assets/*.mp4
 *.mov
 *.webm
 *.avi

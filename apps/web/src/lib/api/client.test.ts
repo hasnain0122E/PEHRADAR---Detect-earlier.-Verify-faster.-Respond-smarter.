@@ -180,3 +180,42 @@ describe("createOpsApi", () => {
     expect(api.evidenceSrc(null)).toBeNull();
   });
 });
+
+describe("createOpsApi (M5 scenarios and media)", () => {
+  it("reads scenarios from the API and starts/resets them through the operator proxy", async () => {
+    const list = { enabled: true, server_time: "2026-10-17T19:00:00+00:00", items: [] };
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse(list))
+      .mockResolvedValueOnce(jsonResponse({ id: "run-1", status: "scheduled" }))
+      .mockResolvedValueOnce(jsonResponse({ runs_cancelled: 1, detections_closed: 0, incidents_closed: 0 }));
+    const api = createOpsApi({ apiBaseUrl: BASE, fetchImpl });
+
+    await expect(api.listScenarios()).resolves.toEqual(list);
+    await expect(api.startScenario("korangi-industrial-fire")).resolves.toMatchObject({ id: "run-1" });
+    await expect(api.resetScenarios()).resolves.toMatchObject({ runs_cancelled: 1 });
+    const urls = fetchImpl.mock.calls.map((c) => c[0]);
+    expect(urls).toEqual([
+      `${BASE}/api/v1/scenarios`,
+      "/api/operator/scenarios/korangi-industrial-fire/start",
+      "/api/operator/scenarios/reset",
+    ]);
+    for (const [, init] of fetchImpl.mock.calls.slice(1)) {
+      expect(Object.keys(init.headers).map((h: string) => h.toLowerCase())).not.toContain("x-operator-key");
+    }
+  });
+
+  it("rejects a scenarios response without the enabled flag", async () => {
+    const api = createOpsApi({ apiBaseUrl: BASE, fetchImpl: vi.fn().mockResolvedValue(jsonResponse({ items: [] })) });
+    await expect(api.listScenarios()).rejects.toMatchObject({ kind: "invalid_response" });
+  });
+
+  it("resolves demo media on the API origin and only https public streams", () => {
+    const api = createOpsApi({ apiBaseUrl: BASE });
+    expect(api.mediaSrc("/api/v1/media/fire.mp4")).toBe(`${BASE}/api/v1/media/fire.mp4`);
+    expect(api.mediaSrc("https://cam.example/live.m3u8")).toBe("https://cam.example/live.m3u8");
+    expect(api.mediaSrc("http://cam.example/live.m3u8")).toBeNull();
+    expect(api.mediaSrc("javascript:alert(1)")).toBeNull();
+    expect(api.mediaSrc(null)).toBeNull();
+  });
+});

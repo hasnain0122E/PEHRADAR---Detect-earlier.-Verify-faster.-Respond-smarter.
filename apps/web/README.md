@@ -2,12 +2,12 @@
 
 Next.js 16 (App Router) + TypeScript + Tailwind CSS 4 + MapLibre GL JS 6.11.2.
 
-**M4 scope:** a single-screen command center for the Karachi Fire Department.
-- A Karachi map with cameras, fire stations and incidents.
-- Queues for cameras, detections awaiting review, and incidents.
-- Test-footage upload per camera, AI evidence review with Confirm / Reject, and incident detail with the candidate station and timeline.
+**Scope (M4 + M5):** a single-screen city command center for the Karachi Fire Department.
+- **Map:** 3D/2D. 179 monitoring nodes with provenance: quiet ones clustered, alerting and feed nodes as individual markers. Also fire stations, incidents and the suggested road route.
+- **Monitoring:** city status bar; demo scenarios (start, countdown, reset); automatic alerts from scenario detections; an activity feed.
+- **Detail:** a camera feed viewer (simulated/public labels, unavailable state); AI evidence review with Confirm / Reject; incident detail with the candidate station, road route and timeline. Manual clip upload stays as a diagnostic.
 
-There are no notifications, acknowledgement workflow, routing or authentication yet.
+**No official or Safe City CCTV is connected.** Demo feeds are licensed sample footage on simulated nodes. There are no notifications, acknowledgement workflow or authentication.
 
 ## Commands (run inside `apps/web`)
 
@@ -39,10 +39,12 @@ browser ── POST /api/operator/<action> (same origin) ──▶ Next.js route
                                                           + X-Operator-Key from env ──▶ API
 ```
 
-- **The proxy** (`src/app/api/operator/[...path]/route.ts` → `src/lib/server/operatorProxy.ts`, marked `server-only`) forwards only three actions:
+- **The proxy** (`src/app/api/operator/[...path]/route.ts` → `src/lib/server/operatorProxy.ts`, marked `server-only`) forwards only these actions:
   - `detect/fire`
   - `detections/{uuid}/confirm`
   - `detections/{uuid}/reject`
+  - `scenarios/{id}/start` (M5)
+  - `scenarios/reset` (M5)
 
   Any other path gets 404.
 - **Guards:**
@@ -60,14 +62,18 @@ browser ── POST /api/operator/<action> (same origin) ──▶ Next.js route
 src/app/page.tsx                    command center (client root)
 src/app/api/operator/[...path]/     server-side operator proxy (route handler, maxDuration 150 s)
 src/components/command/             CommandCenter (layout + flows), TopBar, LeftRail (cameras / review /
-                                    incidents), CameraPanel (upload + stages + negative result),
-                                    DetectionReview, IncidentPanel (+ StationPanel, Timeline), hooks:
-                                    useOpsData (10 s polling), useAlertSound (Web Audio, opt-in)
-src/components/map/                 OpsMap (MapLibre, OpenFreeMap dark style), markers.ts (pure marker model)
+                                    incidents / activity), CameraPanel (feed + facts + diagnostic upload),
+                                    CameraFeed (feed abstraction), CityPanels (status bar, scenario
+                                    controls, demo menu, activity feed), DetectionReview, IncidentPanel
+                                    (+ route, StationPanel, Timeline), hooks: useOpsData (10 s polling),
+                                    useScenarios (2 s while a run is live, else 10 s), useAlertSound
+src/components/map/                 OpsMap (MapLibre: 3D buildings, clustered camera layer, route line,
+                                    fly-to), markers.ts (pure: HTML markers + clustered GeoJSON split)
 src/components/ApiStatus*.tsx       API health (used when the API URL is not configured)
 src/lib/api/                        client.ts (typed OpsApi; reads direct, writes via proxy), types.ts
 src/lib/server/operatorProxy.ts     server-only key boundary
 src/lib/ops.ts                      labels, ordering, clip validation, PKT formatting
+src/lib/city.ts                     provenance labels, city status counts, activity feed (pure)
 src/test/fixtures.ts                API-shaped fixtures and a fake OpsApi for component tests
 ```
 

@@ -50,6 +50,21 @@ class Settings(BaseSettings):
     # Shared key for state-changing operator calls (header X-Operator-Key). Unset in production
     # means those calls are refused (503) rather than left open.
     operator_api_key: str | None = None
+    # M5 demo scenario engine (seed/scenarios.json). Unset: on outside production, off in
+    # production unless SCENARIOS_ENABLED=true is set explicitly for a demo deployment.
+    scenarios_enabled: bool | None = None
+    scenario_worker: bool = True  # background thread that triggers due runs (tests drive tick())
+    scenario_delay_override_s: float | None = Field(default=None, ge=0)  # same delay for all
+    # M5 suggested response route. osrm: the public OSRM demo server unless OSRM_BASE_URL is set.
+    routing_provider: Literal["osrm", "none"] = "osrm"
+    osrm_base_url: str = "https://router.project-osrm.org"
+    routing_timeout_s: float = Field(default=8, gt=0, le=30)
+
+    @property
+    def scenarios_active(self) -> bool:
+        if self.scenarios_enabled is None:
+            return self.app_env != "production"
+        return self.scenarios_enabled
 
     @property
     def sqlalchemy_url(self) -> str:

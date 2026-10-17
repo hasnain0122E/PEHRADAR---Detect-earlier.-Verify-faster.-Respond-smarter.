@@ -1,6 +1,6 @@
 # PehRadar — Design Specification
 
-**Status:** Draft v0.1 (M0). Target design for M6 (vertical-slice UI) and M9 (polish).
+**Status:** Draft v0.1 (M0). Target design for M6 (vertical-slice UI) and M9 (polish). §0 (M4) and §0.1 (M5) record what is built.
 **Design intent:** a control-room instrument, not a "SaaS analytics" dashboard. One question drives every screen: *what does the operator need to decide right now, and what evidence supports it?* The UI is dense, calm, and high-contrast. Colour is reserved for state. Motion is used only to draw attention to something new.
 
 What we deliberately avoid: gradient hero cards, KPI tiles with sparklines, glassmorphism, purple-AI accents, chat bubbles, decorative illustrations, and "AI-powered" badges.
@@ -26,6 +26,23 @@ The M4 command center (`apps/web`, user brief) implements the core of this spec 
 | Alerts | A new pending detection or confirmed incident (seen in the 10 s poll, or the operator's own positive result) adds an amber alert strip with **Review now / Open incident** (`aria-live="assertive"`), up to 3 stacked. The rail's Review badge pulses. | Audio follows §12: off by default, **Enable alert sound** creates the Web Audio context on that click and plays a test chime. Rate limited to 1 per 3 s. No volume slider. |
 
 Lucide is not installed; the few icons are inline SVG or text glyphs.
+
+## 0.1 M5 implementation status (2026-10-17)
+
+| Area | Implemented in M5 |
+|---|---|
+| Header | Demo banner now states "Simulated monitoring network and licensed sample footage · No official or Safe City CCTV connected". Top bar adds **Demo scenarios** (popover; "● Demo running" while a run is live). |
+| City status bar | One row under the top bar with Monitoring nodes · Public/demo feeds · Feeds online · Pending alerts · Active incidents · Available facilities (x/y, demo flag). Every number is counted from API data; tooltips explain each. Right side shows the live scenario or "Simulated network · no official CCTV connected". |
+| Map | 3D by default (pitch 52°, bearing −17°) with a **3D / 2D** toggle. Buildings are extruded from OSM footprints from zoom 13.5 (sparse in Karachi; see K25). Quiet coverage nodes are violet clusters with counts and expand on click; individual nodes are small violet dots, and the mapped location is a white ring. Feed nodes are solid blue camera markers with a live dot and permanent label. Alerting cameras pulse amber. The route is a blue line with a dark casing. A vignette keeps markers readable. The legend explains every symbol and states that no official CCTV is connected. |
+| Feed viewer | 16:9 frame. Tag top-left (**SIMULATED LIVE FEED** dashed violet; **PUBLIC LIVE FEED** solid green, only for `public_live`), code top-right, provenance caption at the bottom. The unavailable state uses a hatched background with the reason ("Feed unavailable in hackathon environment: simulated coverage node"). |
+| Camera panel | Code · district eyebrow, name, source badge, feed, facts (monitoring, feed, source type, source reference, last activity, coordinates), scenario note on demo nodes, and the diagnostic upload below. |
+| Evidence review | Adds a compact camera feed above a labelled "AI evidence frame", plus coordinates, source and input (scenario or upload) rows. |
+| Incident panel | Route block under the candidate station: two numeric tiles (road distance, estimated travel), provider/profile/generated time, free-flow caveat, and the fixed "Route is an estimate. Not a dispatch confirmation." Facility type and operator on the station. |
+| Rail | Fourth tab **Activity**. The camera list gains source filters (All / Feeds / Simulated / Mapped) with a count, and sorts alerting and feed cameras first. Each row shows feed status and a source badge. |
+| Overview | City overview: counts, demo scenarios (Start, status, T−countdown, peak confidence, two-step Reset demo), and the 8 most recent activity entries. |
+| Activity feed | Time (PKT) · tone dot · camera code · message. Built only from real records: scenario runs, detections, incidents and routes, plus this console's own review and reject actions. Click to open the related item. |
+
+Copy rules added: never "dispatched"; the route is a "Suggested response route"; demo footage is never called CCTV.
 
 ## 1. Layout
 

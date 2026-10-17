@@ -130,12 +130,12 @@ def test_neon_style_url_uses_psycopg_driver():
 def test_seed_is_idempotent_and_keeps_status_toggles(tmp_path):
     app = make_db_app(tmp_path, seeded=False)
     with app.state.sessionmaker() as session:
-        assert seed(session) == {"cameras": 8, "fire_stations": 5}
+        assert seed(session) == {"cameras": 179, "fire_stations": 11}
         session.get(FireStation, STATION_SADDAR).status = "unavailable"
         session.commit()
         assert seed(session) == {"cameras": 0, "fire_stations": 0}
         assert session.get(FireStation, STATION_SADDAR).status == "unavailable"
-        assert session.scalar(select(func.count()).select_from(FireStation)) == 5
+        assert session.scalar(select(func.count()).select_from(FireStation)) == 11
 
 
 # --- cameras and stations ---
@@ -146,8 +146,10 @@ def test_cameras_endpoint_lists_simulated_karachi_cameras(tmp_path):
 
     items = client.get("/api/v1/cameras").json()["items"]
 
-    assert len(items) == 8
-    assert all(c["is_simulated"] and c["department"] == "fire" for c in items)
+    assert len(items) == 179
+    assert all(c["department"] == "fire" for c in items)
+    # Everything except the OSM-mapped camera location is a simulated node.
+    assert sum(not c["is_simulated"] for c in items) == 1
     assert all(24.7 <= c["latitude"] <= 25.3 and 66.6 <= c["longitude"] <= 67.6 for c in items)
     assert client.get("/api/v1/cameras?department=police").json()["items"] == []
     assert client.get(f"/api/v1/cameras/{CAM_SADDAR}").json()["code"] == "KHI-CAM-01"
@@ -159,7 +161,7 @@ def test_stations_endpoint_marks_availability_as_demo_only(tmp_path):
 
     items = client.get("/api/v1/fire-stations").json()["items"]
 
-    assert len(items) == 5
+    assert len(items) == 11
     assert all(s["verification_status"] == "unverified" for s in items)
     assert all(s["source_ref"].startswith("osm:") and s["licence"] == "ODbL-1.0" for s in items)
     assert all("not real-time" in s["status_note"] for s in items)
@@ -240,6 +242,7 @@ def test_confirmation_creates_incident_with_nearest_station_and_timeline(tmp_pat
         (1, "detection_created"),
         (2, "operator_confirmed"),
         (3, "station_selected"),
+        (4, "route_unavailable"),  # tests run with routing disabled: straight-line fallback
     ]
     assert incident["timeline"][1]["actor_label"] == "Operator A"
 
@@ -386,11 +389,12 @@ def test_valid_status_transitions_append_timeline_in_order(tmp_path, clip):  # n
         (1, "detection_created"),
         (2, "operator_confirmed"),
         (3, "station_selected"),
-        (4, "status_changed"),
+        (4, "route_unavailable"),
         (5, "status_changed"),
-        (6, "resolved"),
+        (6, "status_changed"),
+        (7, "resolved"),
     ]
-    assert "PehRadar sent no notification" in incident["timeline"][3]["message"]
+    assert "PehRadar sent no notification" in incident["timeline"][4]["message"]
 
 
 @pytest.mark.parametrize(

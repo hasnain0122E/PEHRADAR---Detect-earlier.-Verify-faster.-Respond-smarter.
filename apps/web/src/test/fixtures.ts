@@ -10,6 +10,9 @@ import type {
   FireStation,
   Incident,
   IncidentDetail,
+  Scenario,
+  ScenarioList,
+  ScenarioRun,
 } from "@/lib/api/types";
 
 export const CAMERA_KORANGI: Camera = {
@@ -22,6 +25,13 @@ export const CAMERA_KORANGI: Camera = {
   department: "fire",
   status: "active",
   is_simulated: true,
+  district: "Korangi",
+  camera_type: "fixed_cctv",
+  source_type: "demo_stream",
+  source_reference: "PehRadar demo stream: licensed sample footage looped as a simulated feed",
+  stream_type: "mp4_loop",
+  stream_url: "/api/v1/media/street_sunset_traffic.mp4",
+  monitoring_status: "monitoring",
   created_at: "2026-10-17T10:00:00+00:00",
 };
 
@@ -33,6 +43,28 @@ export const CAMERA_SADDAR: Camera = {
   latitude: 24.8608,
   longitude: 67.0302,
   location_label: "Saddar, near Empress Market",
+  district: "Saddar",
+  source_type: "simulated_coverage",
+  source_reference: "PehRadar simulated coverage point (M3 demo camera)",
+  stream_type: "none",
+  stream_url: null,
+  monitoring_status: "simulated",
+};
+
+/** OSM-mapped camera location: real place, no feed access. */
+export const CAMERA_MAPPED: Camera = {
+  ...CAMERA_SADDAR,
+  id: "4c1d2e3f-0a1b-5c2d-8e3f-4a5b6c7d8e9f",
+  code: "KHI-OSM-001",
+  name: "Mapped surveillance point near Gulshan-e-Iqbal",
+  latitude: 24.93872,
+  longitude: 67.09846,
+  location_label: "Gulshan-e-Iqbal (OSM-mapped camera location)",
+  district: "Gulshan-e-Iqbal",
+  is_simulated: false,
+  source_type: "verified_mapped",
+  source_reference: "osm:node/12272747009 (man_made=surveillance)",
+  monitoring_status: "not_connected",
 };
 
 export const STATION_LANDHI: FireStation = {
@@ -49,6 +81,9 @@ export const STATION_LANDHI: FireStation = {
   source_ref: "osm:node/5133191784",
   licence: "ODbL-1.0",
   verification_status: "unverified",
+  operator: null,
+  facility_type: "municipal_fire_station",
+  availability_is_demo: true,
   created_at: "2026-10-17T10:00:00+00:00",
 };
 
@@ -158,6 +193,7 @@ export const INCIDENT: Incident = {
   confirmed_by: "Duty operator (demo console)",
   confirmed_at: "2026-10-17T19:11:44+00:00",
   resolved_at: null,
+  route: null,
   is_simulated: true,
   created_at: "2026-10-17T19:11:44+00:00",
   updated_at: "2026-10-17T19:11:44+00:00",
@@ -203,6 +239,63 @@ export const INCIDENT_DETAIL: IncidentDetail = {
   ],
 };
 
+export const ROUTE_OK: Extract<NonNullable<Incident["route"]>, { status: "ok" }> = {
+  status: "ok",
+  provider: "osrm",
+  profile: "driving",
+  from_station_id: STATION_LANDHI.id,
+  distance_km: 9.05,
+  duration_min: 11.0,
+  straight_line_km: 7.63,
+  geometry: {
+    type: "LineString",
+    coordinates: [
+      [67.2, 24.85],
+      [67.16, 24.84],
+      [67.124, 24.833],
+    ],
+  },
+  generated_at: "2026-10-17T19:11:45+00:00",
+  is_estimate: true,
+  note: "Suggested response route. Not a dispatch confirmation.",
+};
+
+export const SCENARIO_FIRE: Scenario = {
+  id: "korangi-industrial-fire",
+  name: "Korangi industrial fire",
+  description: "Night building fire on the Korangi node.",
+  camera_id: CAMERA_KORANGI.id,
+  camera_code: CAMERA_KORANGI.code,
+  video_asset: "fire_jamestown_night.mp4",
+  trigger_after_seconds: 45,
+  expected_behavior: "fire_detected",
+  latest_run: null,
+};
+
+export function scenarioRun(overrides: Partial<ScenarioRun> = {}): ScenarioRun {
+  return {
+    id: "9a8b7c6d-0000-4000-8000-00000000aa01",
+    scenario_id: SCENARIO_FIRE.id,
+    camera_id: CAMERA_KORANGI.id,
+    video_asset: SCENARIO_FIRE.video_asset,
+    video_url: "/api/v1/media/fire_jamestown_night.mp4",
+    status: "scheduled",
+    started_by: "Duty operator (demo console)",
+    trigger_at: "2026-10-17T19:08:00+00:00",
+    triggered_at: null,
+    completed_at: null,
+    detection_event_id: null,
+    result: null,
+    error: null,
+    created_at: "2026-10-17T19:07:15+00:00",
+    ...overrides,
+  };
+}
+
+export function scenarioList(items: Scenario[] = [SCENARIO_FIRE], enabled = true): ScenarioList {
+  return { enabled, server_time: new Date().toISOString(), items };
+}
+
 /** OpsApi double with sensible defaults; override any method per test. */
 export function fakeApi(overrides: Partial<OpsApi> = {}): OpsApi {
   return {
@@ -217,7 +310,11 @@ export function fakeApi(overrides: Partial<OpsApi> = {}): OpsApi {
     rejectDetection: vi
       .fn()
       .mockResolvedValue({ ...DETECTION_PENDING, review_status: "rejected", reviewed_at: "2026-10-17T19:12:00+00:00" }),
+    listScenarios: vi.fn().mockResolvedValue(scenarioList()),
+    startScenario: vi.fn().mockResolvedValue(scenarioRun()),
+    resetScenarios: vi.fn().mockResolvedValue({ runs_cancelled: 0, detections_closed: 0, incidents_closed: 0 }),
     evidenceSrc: (path) => (path ? `http://api.test${path}` : null),
+    mediaSrc: (url) => (url ? (url.startsWith("/") ? `http://api.test${url}` : url) : null),
     ...overrides,
   };
 }

@@ -6,6 +6,14 @@ from app.models.tables import (
     FireStation,
     Incident,
     IncidentTimelineEvent,
+    ScenarioRun,
 )
 
-__all__ = ["Camera", "DetectionEvent", "FireStation", "Incident", "IncidentTimelineEvent"]
+__all__ = [
+    "Camera",
+    "DetectionEvent",
+    "FireStation",
+    "Incident",
+    "IncidentTimelineEvent",
+    "ScenarioRun",
+]

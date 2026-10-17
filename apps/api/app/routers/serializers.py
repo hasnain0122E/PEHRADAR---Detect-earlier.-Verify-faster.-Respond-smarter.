@@ -1,11 +1,25 @@
 """Plain-dict JSON shapes for the operational API (M3). Kept explicit so the UI contract is
 easy to read; Schema.md documents the fields."""
 
-from app.models import Camera, DetectionEvent, FireStation, Incident, IncidentTimelineEvent
+from app.models import (
+    Camera,
+    DetectionEvent,
+    FireStation,
+    Incident,
+    IncidentTimelineEvent,
+    ScenarioRun,
+)
 from app.services.operations import STATION_METHOD, STATION_NOTE
 
 API = "/api/v1"
 STATION_STATUS_NOTE = "Demo availability flag; not real-time station availability."
+# What PehRadar actually does with each node type (never implies access PehRadar does not have).
+MONITORING = {
+    "public_live": "monitoring",
+    "demo_stream": "monitoring",
+    "simulated_coverage": "simulated",
+    "verified_mapped": "not_connected",
+}
 
 
 def _ts(value):
@@ -23,8 +37,21 @@ def camera_json(c: Camera) -> dict:
         "department": c.department,
         "status": c.status,
         "is_simulated": c.is_simulated,
+        "district": c.district,
+        "camera_type": c.camera_type,
+        "source_type": c.source_type,
+        "source_reference": c.source_reference,
+        "stream_type": c.stream_type,
+        "stream_url": c.stream_url,
+        "monitoring_status": monitoring_status(c),
         "created_at": _ts(c.created_at),
     }
+
+
+def monitoring_status(c: Camera) -> str:
+    if c.status != "active":
+        return c.status  # offline | maintenance
+    return MONITORING.get(c.source_type, "simulated")
 
 
 def station_json(s: FireStation) -> dict:
@@ -42,6 +69,9 @@ def station_json(s: FireStation) -> dict:
         "source_ref": s.source_ref,
         "licence": s.licence,
         "verification_status": s.verification_status,
+        "operator": s.operator,
+        "facility_type": s.facility_type,
+        "availability_is_demo": s.availability_is_demo,
         "created_at": _ts(s.created_at),
     }
 
@@ -113,6 +143,7 @@ def incident_json(i: Incident, *, detail: bool, has_evidence: bool) -> dict:
         "confirmed_by": i.confirmed_by,
         "confirmed_at": _ts(i.confirmed_at),
         "resolved_at": _ts(i.resolved_at),
+        "route": route_json(i.route, detail),
         "is_simulated": i.is_simulated,
         "created_at": _ts(i.created_at),
         "updated_at": _ts(i.updated_at),
@@ -121,3 +152,31 @@ def incident_json(i: Incident, *, detail: bool, has_evidence: bool) -> dict:
         body["detection"] = detection_json(i.detection, has_evidence)
         body["timeline"] = [timeline_json(t) for t in i.timeline]
     return body
+
+
+def route_json(route: dict | None, detail: bool) -> dict | None:
+    """Lists carry the route summary only; the geometry is in the incident detail."""
+    if route is None or detail:
+        return route
+    return {k: v for k, v in route.items() if k != "geometry"}
+
+
+def scenario_run_json(r: ScenarioRun | None) -> dict | None:
+    if r is None:
+        return None
+    return {
+        "id": r.id,
+        "scenario_id": r.scenario_id,
+        "camera_id": r.camera_id,
+        "video_asset": r.video_asset,
+        "video_url": f"{API}/media/{r.video_asset}",
+        "status": r.status,
+        "started_by": r.started_by,
+        "trigger_at": _ts(r.trigger_at),
+        "triggered_at": _ts(r.triggered_at),
+        "completed_at": _ts(r.completed_at),
+        "detection_event_id": r.detection_event_id,
+        "result": r.result,
+        "error": r.error,
+        "created_at": _ts(r.created_at),
+    }

@@ -19,12 +19,29 @@ from app.domain.incident_rules import (
     nearest_available_station,
     severity_for,
 )
-from app.models import Camera, DetectionEvent, FireStation, Incident, IncidentTimelineEvent
+from app.models import (
+    Camera,
+    DetectionEvent,
+    FireStation,
+    Incident,
+    IncidentTimelineEvent,
+    ScenarioRun,
+)
+from app.routing import RouteProvider, RoutingError, straight_line_km
 
 STATION_METHOD = "straight_line_haversine"
 STATION_NOTE = (
     "Geographic proximity only: straight-line distance, not a driving route or ETA. "
     "Station availability is a demo flag and does not mean the station can respond."
+)
+
+
+ROUTE_NOTE = (
+    "Suggested response route. Road distance and travel time are estimates from OpenStreetMap "
+    "routing. Not a dispatch confirmation."
+)
+FALLBACK_NOTE = (
+    "Road route unavailable; showing straight-line distance only. Not a dispatch confirmation."
 )
 
 
@@ -107,6 +124,77 @@ def confirm_detection(
     _select_station(session, incident)
     _commit(session, "DETECTION_ALREADY_REVIEWED", "This detection was already reviewed")
     return incident
+
+
+def attach_route(session: Session, incident_id: str, provider: RouteProvider | None) -> None:
+    """Suggested road route from the candidate station to the incident, stored on the incident.
+
+    Runs after the confirmation has committed, so a routing failure can never undo or block the
+    incident: it falls back to the straight-line distance and records why."""
+    incident = session.get(Incident, incident_id)
+    if incident is None or incident.station is None:
+        return
+    station = incident.station
+    origin, destination = (
+        (station.latitude, station.longitude),
+        (incident.latitude, incident.longitude),
+    )
+    now = utc_now()
+    straight = straight_line_km(origin, destination)
+    if provider is None:
+        reason = "Routing is disabled on this server"
+    else:
+        try:
+            route = provider.route(origin, destination)
+        except RoutingError as exc:
+            reason = str(exc)
+        else:
+            incident.route = {
+                "status": "ok",
+                "provider": route.provider,
+                "profile": route.profile,
+                "from_station_id": station.id,
+                "distance_km": route.distance_km,
+                "duration_min": route.duration_min,
+                "straight_line_km": straight,
+                "geometry": {"type": "LineString", "coordinates": route.coordinates},
+                "generated_at": now.isoformat(),
+                "is_estimate": True,
+                "note": ROUTE_NOTE,
+            }
+            _log(
+                incident,
+                "route_generated",
+                "system",
+                f"Suggested response route from {station.name}: {route.distance_km} km by road, "
+                f"about {route.duration_min:.0f} min ({route.provider} estimate; not a dispatch)",
+                {
+                    "provider": route.provider,
+                    "distance_km": route.distance_km,
+                    "duration_min": route.duration_min,
+                },
+            )
+            _commit(session, "CONCURRENT_UPDATE", "The incident was changed concurrently")
+            return
+    incident.route = {
+        "status": "unavailable",
+        "provider": provider.name if provider else None,
+        "from_station_id": station.id,
+        "reason": reason,
+        "fallback": "straight_line",
+        "straight_line_km": straight,
+        "generated_at": now.isoformat(),
+        "is_estimate": True,
+        "note": FALLBACK_NOTE,
+    }
+    _log(
+        incident,
+        "route_unavailable",
+        "system",
+        f"Road route unavailable ({reason}); straight-line distance {straight} km shown instead",
+        {"reason": reason, "straight_line_km": straight},
+    )
+    _commit(session, "CONCURRENT_UPDATE", "The incident was changed concurrently")
 
 
 def reject_detection(
@@ -234,3 +322,53 @@ def _commit(session: Session, code: str, message: str) -> None:
     except IntegrityError as exc:
         session.rollback()
         raise OperationError(409, code, message) from exc
+
+
+RESET_LABEL = "Demo reset"
+
+
+def reset_scenario_data(session: Session) -> dict[str, int]:
+    """Demo reset: cancels unfinished scenario runs, rejects pending scenario detections and closes
+    open incidents that came from scenario detections. Nothing is deleted, every change is a
+    normal review or timeline record, and upload-created data is never touched."""
+    now = utc_now()
+    runs = session.scalars(
+        select(ScenarioRun).where(ScenarioRun.status.in_(("scheduled", "running")))
+    ).all()
+    for run in runs:
+        run.status, run.completed_at, run.error = "cancelled", now, "Cancelled by demo reset"
+    scenario_detections = select(ScenarioRun.detection_event_id).where(
+        ScenarioRun.detection_event_id.is_not(None)
+    )
+    pending = session.scalars(
+        select(DetectionEvent).where(
+            DetectionEvent.id.in_(scenario_detections), DetectionEvent.review_status == "pending"
+        )
+    ).all()
+    for detection in pending:
+        detection.review_status, detection.reviewed_at = "rejected", now
+        detection.reviewed_by = RESET_LABEL
+        detection.review_note = "Closed by demo reset (scenario data)"
+    incidents = session.scalars(
+        select(Incident).where(
+            Incident.detection_event_id.in_(scenario_detections),
+            Incident.status.not_in(tuple(TERMINAL)),
+        )
+    ).all()
+    for incident in incidents:
+        previous = incident.status
+        incident.status, incident.resolved_at = "resolved", now
+        _log(
+            incident,
+            "resolved",
+            "system",
+            "Closed by demo reset: scenario-generated incident, not a real event",
+            {"from": previous, "to": "resolved", "reason": "demo_reset"},
+            actor_label=RESET_LABEL,
+        )
+    _commit(session, "CONCURRENT_UPDATE", "Demo data changed concurrently; retry the reset")
+    return {
+        "runs_cancelled": len(runs),
+        "detections_closed": len(pending),
+        "incidents_closed": len(incidents),
+    }

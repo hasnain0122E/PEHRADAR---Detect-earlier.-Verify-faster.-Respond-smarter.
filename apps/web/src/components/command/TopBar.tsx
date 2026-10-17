@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from "@/lib/config";
 import { pktTime } from "@/lib/ops";
 
@@ -13,6 +15,7 @@ interface TopBarProps {
   activeIncidents: number;
   analyzing: boolean;
   sound: { supported: boolean; enabled: boolean; enable: () => void; disable: () => void };
+  demo?: ReactNode;
 }
 
 const HEALTH_VIEW = {
@@ -25,8 +28,8 @@ const HEALTH_VIEW = {
 export function DemoBanner() {
   return (
     <div className="border-b border-dashed border-sim/60 bg-sim/10 px-4 py-1 text-center text-xs font-medium tracking-wide text-sim uppercase">
-      Demo · Simulated cameras and test footage · Station availability is demo data · Not connected
-      to any emergency service
+      Demo · Simulated monitoring network and licensed sample footage · No official or Safe City
+      CCTV connected · Station availability is demo data · Not connected to any emergency service
     </div>
   );
 }
@@ -78,6 +81,7 @@ export function TopBar(props: TopBarProps) {
         <span className="hidden font-mono text-xs text-ink-300 tabular-nums sm:inline">
           Last sync {lastSync ? `${pktTime(lastSync)} PKT` : "—"}
         </span>
+        {props.demo}
         {sound.supported && (
           <button
             type="button"

@@ -4,8 +4,10 @@ import { useState } from "react";
 
 import { ApiError } from "@/lib/api/client";
 import type { Camera, Detection } from "@/lib/api/types";
+import { SOURCE_VIEW } from "@/lib/city";
 import { confidence, EVENT_LABEL, pktDateTime, videoOffset } from "@/lib/ops";
 
+import { CameraFeed, type FeedMode } from "./CameraFeed";
 import {
   BUTTON_PRIMARY,
   BUTTON_SECONDARY,
@@ -27,6 +29,9 @@ interface DetectionReviewProps {
   onReject: (detection: Detection, note: string) => Promise<void>;
   onOpenIncident: (incidentId: string) => void;
   onBack: () => void;
+  feed?: FeedMode;
+  /** Where the clip came from: a named demo scenario or an operator upload. */
+  originNote?: string | null;
 }
 
 type Armed = "confirm" | "reject" | null;
@@ -69,9 +74,18 @@ export function DetectionReview(props: DetectionReviewProps) {
           <h2 className="text-lg font-semibold">{camera?.name ?? "Unknown camera"}</h2>
           {d.is_simulated && <ProvenanceBadge>Simulated</ProvenanceBadge>}
         </div>
-        <p className="font-mono text-xs text-ink-300">Detected {pktDateTime(d.detected_at)}</p>
+        <p className="font-mono text-xs text-ink-300">
+          {camera?.code ?? "—"} · Detected {pktDateTime(d.detected_at)}
+        </p>
       </header>
 
+      {camera && props.feed && pending && (
+        <div className="grid gap-1">
+          <p className="text-[11px] font-medium tracking-wider text-ink-500 uppercase">Camera feed</p>
+          <CameraFeed camera={camera} mode={props.feed} compact />
+        </div>
+      )}
+      <p className="text-[11px] font-medium tracking-wider text-ink-500 uppercase">AI evidence frame</p>
       <EvidenceImage
         key={evidenceSrc ?? "none"}
         src={evidenceSrc}
@@ -104,6 +118,18 @@ export function DetectionReview(props: DetectionReviewProps) {
           ],
           ["Decision rule", <span key="r" className="text-xs">{details.rule}</span>],
           ["Camera location", camera ? `${camera.location_label}` : "—"],
+          [
+            "Coordinates",
+            camera ? (
+              <Mono key="xy">
+                {camera.latitude.toFixed(5)}, {camera.longitude.toFixed(5)}
+              </Mono>
+            ) : (
+              "—"
+            ),
+          ],
+          ["Source", camera ? SOURCE_VIEW[camera.source_type].label : "—"],
+          ["Input", props.originNote ?? "—"],
           ["Model", <span key="m" className="font-mono text-xs break-all">{d.model}</span>],
           ["Processing time", <Mono key="s">{details.processing_seconds.toFixed(1)} s</Mono>],
         ]}
