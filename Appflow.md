@@ -212,3 +212,9 @@ Operator      Web (Next.js)            API (FastAPI)              Worker thread 
 
 - The timeline is returned in `seq` order on `GET /api/v1/incidents/{id}`.
 - Rejected detections have no incident and therefore no timeline; their review data (`reviewed_at`, `reviewed_by`, `review_note`) lives on the `detection_event` row.
+
+## 6. M6C: multi-agency response suggestions
+
+On **Confirm incident** (after the detection review), in one transaction: incident created → fire station selected (`station_selected`) → ambulance facility selected (`resource_selected`, unit ambulance) → police station selected (`resource_selected`, unit police). When no facility of a kind is available: `no_station_available` (fire) or `no_resource_available` (unit). After the commit, routes are requested per unit: `route_generated` or `route_unavailable` with `details.unit` = fire / ambulance / police. A failed route only affects its own unit (straight-line fallback).
+
+Operator view: the incident drawer lists the three suggested resources; **Show all routes** draws them in red (fire), green (ambulance) and blue (police) and opens a route summary card; toggles hide individual routes; **Exit route view**, **Reset operations** and **Full reset** clear the view. A merged follow-up detection (M6B) does not re-select or re-route. Nothing is dispatched and no one is notified at any step.

@@ -2,9 +2,10 @@
 
 import { type ReactNode, useMemo, useState } from "react";
 
-import type { Camera, Detection, FireStation, Incident, SourceType } from "@/lib/api/types";
+import type { Camera, Detection, FacilityCategory, FireStation, Incident, SourceType } from "@/lib/api/types";
 import { type ActivityEntry, hasFeed } from "@/lib/city";
 import { confidencePct, isActiveIncident, pktTime, sortIncidents, STATUS_LABEL } from "@/lib/ops";
+import { categoryOf, responseUnits } from "@/lib/response";
 
 import { Icon } from "../icons";
 import { ActivityList } from "./CityPanels";
@@ -145,6 +146,13 @@ function PendingRows({ pending, cameras, selection, onSelect }: ListProps) {
   ));
 }
 
+/** "Suggested: Landhi Fire Station +2" (the fire candidate first, then ambulance and police). */
+function suggested(incident: Incident) {
+  const units = responseUnits(incident);
+  if (!units.length) return "No response facility available";
+  return `Suggested: ${units[0].facility.name}${units.length > 1 ? ` +${units.length - 1}` : ""}`;
+}
+
 function IncidentRows({ incidents, selection, onSelect }: { incidents: Incident[] } & Pick<ListProps, "selection" | "onSelect">) {
   return incidents.map((i) => (
     <li key={i.id}>
@@ -153,7 +161,7 @@ function IncidentRows({ incidents, selection, onSelect }: { incidents: Incident[
         onClick={() => onSelect({ kind: "incident", id: i.id })}
         lead={dot(isActiveIncident(i) ? "bg-fire" : "bg-fg-3")}
         title={i.camera.location_label}
-        subtitle={`${STATUS_LABEL[i.status]} · ${i.station_selection ? `Candidate: ${i.station_selection.station.name}` : "No candidate station"}`}
+        subtitle={`${STATUS_LABEL[i.status]} · ${suggested(i)}`}
         meta={pktTime(i.confirmed_at ?? i.created_at).slice(0, 5)}
       />
     </li>
@@ -301,25 +309,64 @@ function CameraList({ cameras, pending, incidents, selection, analyzingCameraId,
   );
 }
 
+type FacilityFilter = "all" | FacilityCategory;
+const FACILITY_FILTERS: { id: FacilityFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "fire", label: "Fire" },
+  { id: "ambulance", label: "Ambulance" },
+  { id: "police", label: "Police" },
+];
+const CATEGORY_DOT: Record<FacilityCategory, string> = { fire: "bg-fire", ambulance: "bg-ok", police: "bg-info" };
+const CATEGORY_GROUP: Record<FacilityCategory, string> = {
+  fire: "Fire stations",
+  ambulance: "Ambulance / EMS",
+  police: "Police stations",
+};
+
+/** M6C: fire, ambulance and police facilities, grouped by service. */
 function StationList({ stations, selection, onSelect }: ListProps) {
+  const [filter, setFilter] = useState<FacilityFilter>("all");
   if (!stations.length) return <Empty title="No stations loaded." />;
-  const sorted = [...stations].sort(
-    (a, b) => Number(b.status === "available") - Number(a.status === "available") || a.name.localeCompare(b.name),
-  );
+  const categories = (["fire", "ambulance", "police"] as const).filter((c) => filter === "all" || filter === c);
   return (
-    <ul className="grid pt-1">
-      {sorted.map((s) => (
-        <li key={s.id}>
-          <Row
-            selected={selection?.kind === "station" && selection.id === s.id}
-            onClick={() => onSelect({ kind: "station", id: s.id })}
-            lead={dot(s.status === "available" ? "bg-ok" : "bg-fg-3")}
-            title={s.name}
-            subtitle={s.location_label}
-            meta={s.status === "available" ? "Available" : "Unavailable"}
-          />
-        </li>
-      ))}
-    </ul>
+    <>
+      <div role="group" aria-label="Filter facilities by service" className="flex flex-wrap items-center gap-1 px-2 pb-1">
+        {FACILITY_FILTERS.map((f) => (
+          <button
+            key={f.id}
+            type="button"
+            aria-pressed={filter === f.id}
+            onClick={() => setFilter(f.id)}
+            className={`h-7 rounded-md px-2.5 text-[13px] font-medium ${FOCUS} ${
+              filter === f.id ? "bg-navy text-white" : "text-fg-2 hover:bg-muted"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+      {categories.map((category) => {
+        const rows = stations
+          .filter((s) => categoryOf(s) === category)
+          .sort((a, b) => Number(b.status === "available") - Number(a.status === "available") || a.name.localeCompare(b.name));
+        if (!rows.length) return null;
+        return (
+          <Group key={category} title={`${CATEGORY_GROUP[category]} · ${rows.length}`}>
+            {rows.map((s) => (
+              <li key={s.id}>
+                <Row
+                  selected={selection?.kind === "station" && selection.id === s.id}
+                  onClick={() => onSelect({ kind: "station", id: s.id })}
+                  lead={dot(s.status === "available" ? CATEGORY_DOT[category] : "bg-fg-3")}
+                  title={s.name}
+                  subtitle={s.location_label}
+                  meta={s.status === "available" ? "Available" : "Unavailable"}
+                />
+              </li>
+            ))}
+          </Group>
+        );
+      })}
+    </>
   );
 }

@@ -191,20 +191,30 @@ body {
   border: 1.5px solid var(--color-surface);
 }
 
-/* Fire station: solid rounded square with a fire-station glyph. Unavailable = dashed grey + ×. */
+/* Response facilities (M6C): one rounded square, glyph and accent per service. Quiet: white with
+   a coloured glyph. Suggested for the selected incident: filled with the service colour.
+   Unavailable: grey, dashed and crossed. */
+.pr-marker-station {
+  --cat: var(--color-fire);
+}
+.pr-marker-station.cat-ambulance {
+  --cat: var(--color-ok);
+}
+.pr-marker-station.cat-police {
+  --cat: var(--color-info);
+}
 .pr-station {
   display: grid;
   place-items: center;
   width: 24px;
   height: 24px;
   border-radius: 7px;
-  background: var(--color-ok);
-  border: 1.5px solid #fff;
-  color: #fff;
-  box-shadow: 0 1px 3px rgb(16 24 40 / 0.25);
+  background: var(--color-surface);
+  border: 1.5px solid var(--cat);
+  color: var(--cat);
+  box-shadow: 0 1px 3px rgb(16 24 40 / 0.2);
 }
 .pr-marker-station.is-unavailable .pr-station {
-  background: var(--color-surface);
   border: 1.5px dashed var(--color-fg-3);
   color: var(--color-fg-3);
   box-shadow: none;
@@ -220,10 +230,16 @@ body {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  box-shadow: 0 0 0 4px rgb(22 163 106 / 0.22), 0 2px 6px rgb(16 24 40 / 0.25);
+  background: var(--cat);
+  border-color: #fff;
+  color: #fff;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--cat) 25%, transparent), 0 2px 6px rgb(16 24 40 / 0.25);
+}
+.pr-marker-station.is-candidate .pr-label {
+  display: block;
 }
 .pr-marker-station.is-selected .pr-station {
-  box-shadow: 0 0 0 3px var(--color-surface), 0 0 0 5px var(--color-info);
+  box-shadow: 0 0 0 3px var(--color-surface), 0 0 0 5px var(--cat);
 }
 
 /* Incident: the one dominant element. An anchored map pin with a fire or smoke glyph. */
@@ -287,7 +303,9 @@ body {
 }
 
 .ops-map.hide-cameras .pr-marker-camera,
-.ops-map.hide-stations .pr-marker-station,
+.ops-map.hide-fire .pr-marker-station.cat-fire,
+.ops-map.hide-ambulance .pr-marker-station.cat-ambulance,
+.ops-map.hide-police .pr-marker-station.cat-police,
 .ops-map.hide-incidents .pr-marker-incident {
   display: none;
 }
@@ -367,8 +385,23 @@ body {
   border-color: var(--color-surface);
 }
 .legend-station {
-  background: var(--color-ok) !important;
+  background: var(--color-surface) !important;
+  border: 1.5px solid var(--color-fire) !important;
+}
+.legend-station.is-ambulance {
   border-color: var(--color-ok) !important;
+}
+.legend-station.is-police {
+  border-color: var(--color-info) !important;
+}
+.legend-route.is-fire {
+  background: #e5484d;
+}
+.legend-route.is-ambulance {
+  background: #16a36a;
+}
+.legend-route.is-police {
+  background: #2563eb;
 }
 .legend-station.is-unavailable {
   background: var(--color-surface) !important;

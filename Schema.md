@@ -275,3 +275,19 @@ Index: (`incident_id`, `is_current`, `rank`).
 
 Index: (`incident_id`, `created_at`). The rate-limit check uses `created_at` for the global per-hour count.
 
+## 4C. M6C additions (migration `0004`, 2026-10-18)
+
+Smallest safe path: the existing `fire_station` table becomes the response-facility table instead of adding a second facility table, so fire-station ids, `incident.assigned_station_id` and every existing row stay untouched.
+
+| Change | Detail |
+|---|---|
+| `fire_station.category` | varchar(20) NOT NULL, server default `fire` (every existing row becomes `fire`), CHECK `fire \| police \| ambulance`, indexed. This is the `facility_type` enum of the M6C brief; the existing `facility_type` column keeps the finer subtype. |
+| `fire_station.facility_type` | CHECK widened with `police_station` and `ambulance_station` |
+| `incident.response_units` | JSON null: `{"ambulance": {facility_id, distance_km, method, reason, route}, "police": {…}}`; `route` has the same shape as `incident.route`. Fire stays in `assigned_station_id` / `station_distance_km` / `route`. |
+| `incident_timeline_event.event_type` | adds `resource_selected` and `no_resource_available` (with `details.unit`); `route_generated` / `route_unavailable` gain `details.unit` |
+
+Brief-to-column mapping: id, name, facility_type → `category`, latitude, longitude, location_label, operator, source_reference → `source_ref`, verification_status, operational_status_demo → `status`, availability_is_demo, created_at.
+
+Downgrade deletes the police/ambulance rows (seed data only; incidents reference fire stations only) and the two new timeline event types, then drops the columns and restores the CHECKs. Upgrade/downgrade is tested on SQLite; every operation is a plain column add/drop or CHECK swap, which PostgreSQL (Neon) supports in place.
+
+**Seed (M6C):** 11 fire-response facilities, 76 police stations and 19 ambulance stations, all real OpenStreetMap elements (ODbL-1.0, retrieved 2026-10-17/18), unverified with the services; none is simulated. Codes `KHI-PS-001…076` and `KHI-AMB-001…019`.

@@ -21,7 +21,7 @@ The user's M5 brief widened the demo from a manual upload console to a city-scal
 - **Automated demo scenarios:** a scenario plays a licensed clip on a demo-stream node and runs it through the **real** detector after a delay. A confirmed result becomes an ordinary pending detection with real confidence and evidence. **Nothing is auto-confirmed**; the operator still confirms or rejects. Three scenarios: Korangi fire, Clifton smoke, and Lyari sunset glare (a false-alarm lookalike that the temporal rule correctly does not confirm). Manual upload remains as a diagnostic fallback.
 - **Suggested response route:** after confirmation, a road route from the candidate station (still chosen by straight-line proximity) to the incident, from OSRM on OpenStreetMap roads. It is an **estimate** (free-flow, no traffic) and never a dispatch. If routing fails, the incident keeps the straight-line distance.
 - **3D map, clustering, feed viewer, city status bar and activity feed** in the command center.
-- **Still out of scope:** police, ambulance, authentication, LLMs, notifications and acknowledgement automation.
+- **Still out of scope:** police or ambulance *detection*, authentication, LLMs, notifications and acknowledgement automation. (M6C adds police and ambulance only as *suggested response resources* for a confirmed fire incident; see §15.)
 
 ## 1. Problem statement
 
@@ -55,7 +55,7 @@ PehRadar is a **decision-support** tool. It flags *possible* fire or smoke in vi
 
 - Real CCTV/RTSP/ONVIF stream ingestion.
 - Integration with any official emergency service system (Rescue 1122, KMC Fire Department, or others).
-- Police, ambulance, theft detection, vehicle-accident detection, or any non-fire category. These are explicitly **deferred** until the fire MVP is complete and deployed.
+- Police or ambulance *detection*, theft detection, vehicle-accident detection, or any non-fire category. M6C only suggests the nearest police and ambulance facilities for a confirmed fire incident; it detects nothing new and dispatches nothing.
 - Cities other than Karachi.
 - Automatic dispatch without human confirmation.
 - User accounts, roles, or multi-tenant administration (a single shared demo access key only).
@@ -220,3 +220,12 @@ The full risk register with likelihood, impact, mitigation and owner milestone i
 - **Routes are suggestions.** Road-network routes come from a third-party router without live traffic, road closures, or safety information.
 - **Simulated input.** Pre-recorded videos stand in for camera feeds. Wall-clock timestamps reflect processing time, not the time the footage was recorded.
 - **Single-camera scope.** One fire seen by two cameras produces two incidents. The operator resolves one as `DUPLICATE`.
+
+## 15. M6C: multi-agency response suggestions (2026-10-18, final feature milestone)
+
+For every confirmed incident PehRadar now suggests three response resources: the nearest available **fire** station, **ambulance** facility and **police** station, each with a road route (distance and estimated travel time) drawn on the map in its own colour (fire red, ambulance green, police blue).
+
+- **Data:** 11 fire-response facilities, 76 police stations and 19 ambulance stations, all real OpenStreetMap elements (ODbL-1.0, retrieved 2026-10-17/18), unverified with the services; none is simulated. Hospitals are not counted as ambulance resources.
+- **What it is not:** not a dispatch, not a notification, not real-time availability. Availability is a demo flag. Routes are free-flow OSRM estimates (no traffic, signals or emergency-vehicle rules).
+- **Required wording in the UI:** "Suggested response resources based on mapped proximity and routing estimates. This does not confirm real-world availability or dispatch."
+- **Acceptance:** confirming an incident shows three units with road distance and ETA (or a straight-line fallback for a unit whose route failed), "Show all routes" draws three coloured routes with per-service toggles, and both resets clear the response view.

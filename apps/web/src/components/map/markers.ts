@@ -11,9 +11,17 @@
 // once closed, shown only with the history layer); a pending detection is an amber disc with an
 // exclamation mark; a camera with a feed carries a small live dot; stations are solid rounded
 // squares with a fire-station glyph (grey, dashed and crossed when unavailable).
+//
+// M6C: response facilities have one shape per service glyph: fire station (red), ambulance
+// (green), police shield (blue); the suggested units of the selected incident are filled with
+// their service colour. Fire stations are always HTML markers (11). Quiet police and ambulance
+// facilities (~95) go to a GL layer (facilityFeatures) shown from district zoom, so the city
+// view stays readable.
 
 import type { Camera, Detection, FireStation, Incident } from "@/lib/api/types";
+import type { ResponseUnitKind } from "@/lib/api/types";
 import { EVENT_LABEL, isActiveIncident, SEVERITY_VIEW, STATUS_LABEL } from "@/lib/ops";
+import { categoryOf, responseUnits, UNIT_VIEW } from "@/lib/response";
 
 import type { Selection } from "../command/selection";
 import { iconSvg } from "../icons";
@@ -119,7 +127,11 @@ export function cameraFeatures(input: MarkerInput): CameraFeatureCollection {
 
 const CAMERA_SVG = iconSvg("camera", 12);
 const EXCLAIM_SVG = iconSvg("exclaim", 14);
-const STATION_SVG = iconSvg("fireStation", 14);
+const FACILITY_SVG = {
+  fire: iconSvg("fireStation", 14),
+  ambulance: iconSvg("ambulance", 14),
+  police: iconSvg("police", 14),
+};
 const INCIDENT_SVG = { fire: iconSvg("flame", 15), smoke: iconSvg("smoke", 15), fire_smoke: iconSvg("flame", 15) };
 const CLOSED_SVG = iconSvg("check", 14);
 
@@ -129,13 +141,16 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
   const { pendingByCamera, incidentByCamera, selectedCameraId, analyzing } = state;
   const selectedIncident =
     selection?.kind === "incident" ? incidents.find((i) => i.id === selection.id) : undefined;
-  const candidateStationId = selectedIncident?.assigned_station_id ?? null;
+  const candidates = candidateUnits(input);
 
   const specs: MarkerSpec[] = [];
 
   for (const s of stations) {
-    const classes = ["pr-marker", "pr-marker-station", `is-${s.status}`];
-    if (s.id === candidateStationId) classes.push("is-candidate");
+    if (!isProminentFacility(s, input, candidates)) continue;
+    const category = categoryOf(s);
+    const unit = candidates.get(s.id);
+    const classes = ["pr-marker", "pr-marker-station", `cat-${category}`, `is-${s.status}`];
+    if (unit) classes.push("is-candidate");
     if (selection?.kind === "station" && selection.id === s.id) classes.push("is-selected");
     const glyph = s.status === "available" ? "" : '<span class="pr-x" aria-hidden="true">×</span>';
     specs.push({
@@ -143,11 +158,11 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
       lng: s.longitude,
       lat: s.latitude,
       className: classes.join(" "),
-      html: `<span class="pr-station">${STATION_SVG}</span>${glyph}<span class="pr-label">${escapeHtml(s.name)}</span>`,
+      html: `<span class="pr-station">${FACILITY_SVG[category]}</span>${glyph}<span class="pr-label">${escapeHtml(s.name)}</span>`,
       anchor: "center",
-      label: `Fire station: ${s.name} (${s.status === "available" ? "available, demo flag" : "unavailable, demo flag"}${s.id === candidateStationId ? "; candidate station" : ""})`,
+      label: `${FACILITY_NAME[category]}: ${s.name} (${s.status === "available" ? "available, demo flag" : "unavailable, demo flag"}${unit ? `; suggested ${UNIT_VIEW[unit].label.toLowerCase()} resource` : ""})`,
       select: { kind: "station", id: s.id },
-      z: 1,
+      z: unit ? 2 : 1,
     });
   }
 
@@ -207,6 +222,53 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
     });
   }
   return specs;
+}
+
+const FACILITY_NAME: Record<ResponseUnitKind, string> = {
+  fire: "Fire station",
+  ambulance: "Ambulance response facility",
+  police: "Police station",
+};
+
+/** Facilities suggested for the selected incident: facility id → unit. */
+export function candidateUnits(input: MarkerInput): Map<string, ResponseUnitKind> {
+  const { selection, incidents } = input;
+  const incident = selection?.kind === "incident" ? incidents.find((i) => i.id === selection.id) : undefined;
+  return new Map(incident ? responseUnits(incident).map((u) => [u.facility.id, u.unit] as const) : []);
+}
+
+function isProminentFacility(s: FireStation, input: MarkerInput, candidates: Map<string, ResponseUnitKind>) {
+  return (
+    categoryOf(s) === "fire" ||
+    candidates.has(s.id) ||
+    (input.selection?.kind === "station" && input.selection.id === s.id)
+  );
+}
+
+export interface FacilityFeatureCollection {
+  type: "FeatureCollection";
+  features: {
+    type: "Feature";
+    id: number;
+    geometry: { type: "Point"; coordinates: [number, number] };
+    properties: { id: string; name: string; category: ResponseUnitKind; inactive: boolean };
+  }[];
+}
+
+/** GeoJSON for the quiet police and ambulance facilities (not HTML markers). */
+export function facilityFeatures(input: MarkerInput): FacilityFeatureCollection {
+  const candidates = candidateUnits(input);
+  return {
+    type: "FeatureCollection",
+    features: input.stations
+      .filter((s) => !isProminentFacility(s, input, candidates))
+      .map((s, index) => ({
+        type: "Feature" as const,
+        id: index,
+        geometry: { type: "Point" as const, coordinates: [s.longitude, s.latitude] as [number, number] },
+        properties: { id: s.id, name: s.name, category: categoryOf(s), inactive: s.status !== "available" },
+      })),
+  };
 }
 
 /** "Saddar - Empress Market (simulated)" → "Saddar" for the map label. */

@@ -13,9 +13,12 @@ import type {
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { ResponseUnitKind } from "@/lib/api/types";
+import { type MapRoute, responseUnits, UNIT_VIEW } from "@/lib/response";
+
 import { type Selection, selectionKey } from "../command/selection";
 import { Icon, type IconName } from "../icons";
-import { buildMarkers, cameraFeatures, type MarkerInput } from "./markers";
+import { buildMarkers, cameraFeatures, candidateUnits, facilityFeatures, type MarkerInput } from "./markers";
 
 /** OpenFreeMap basemaps: free, no API key, OpenStreetMap data. Positron (light) and Dark. */
 const STYLE_URL: Record<MapTheme, string> = {
@@ -38,7 +41,9 @@ const VIEW_2D = { pitch: 0, bearing: 0 };
 const BUILDINGS_MIN_ZOOM = 12.5;
 
 type MapState = "loading" | "ready" | "tiles-failed" | "unsupported";
-type Layer = "cameras" | "stations" | "incidents";
+type Layer = "cameras" | ResponseUnitKind | "incidents";
+/** Quiet police and ambulance points appear from district zoom (no city-wide clutter). */
+const FACILITY_MIN_ZOOM = 11.5;
 export type MapView = "3d" | "2d";
 export type MapTheme = "light" | "dark";
 
@@ -85,8 +90,9 @@ export interface MapFocus {
 
 export interface OpsMapProps extends MarkerInput {
   onSelect: (selection: Selection) => void;
-  /** Suggested response route in route mode ([lng, lat] pairs). Unrelated nodes recede. */
-  route?: [number, number][] | null;
+  /** M6C response view: one road route per suggested unit, each in its service colour.
+   *  Unrelated nodes recede while any route is shown. */
+  routes?: MapRoute[] | null;
   focus?: MapFocus | null;
   view?: MapView;
   theme?: MapTheme;
@@ -111,10 +117,12 @@ function framingFor(input: OpsMapProps, selection: Selection | null): Point[] {
       break;
     case "incident": {
       const incident = input.incidents.find((i) => i.id === selection.id);
+      const routes = input.routes ?? [];
+      // In the response view: the incident, every suggested facility and every route.
       points = [
         at(incident),
-        ...(input.route?.length ? [at(input.stations.find((s) => s.id === incident?.assigned_station_id))] : []),
-        ...(input.route ?? []),
+        ...(routes.length && incident ? responseUnits(incident).map((u) => at(u.facility)) : []),
+        ...routes.flatMap((r) => r.coordinates),
       ];
       break;
     }
@@ -140,6 +148,15 @@ export const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 const CAMERA_LAYERS = ["pr-cluster", "pr-cluster-count", "pr-camera-point"];
+const FACILITY_COLOR: ExpressionSpecification = [
+  "match",
+  ["get", "category"],
+  "police",
+  UNIT_VIEW.police.color,
+  "ambulance",
+  UNIT_VIEW.ambulance.color,
+  UNIT_VIEW.fire.color,
+];
 const pointOpacity = (): ExpressionSpecification => ["case", ["get", "inactive"], 0.4, 1];
 
 function cityLayers(theme: MapTheme): LayerSpecification[] {
@@ -150,7 +167,7 @@ function cityLayers(theme: MapTheme): LayerSpecification[] {
       type: "line",
       source: "pr-route",
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": c.routeCasing, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 15, 12] },
+      paint: { "line-color": c.routeCasing, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 6, 15, 10] },
     },
     {
       id: "pr-route-line",
@@ -158,8 +175,24 @@ function cityLayers(theme: MapTheme): LayerSpecification[] {
       source: "pr-route",
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "line-color": c.route,
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 15, 6],
+        // One colour per service: fire red, ambulance green, police blue.
+        "line-color": ["coalesce", ["get", "color"], c.route],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3, 15, 5],
+        "line-opacity": 0.92,
+      },
+    },
+    {
+      id: "pr-facility-point",
+      type: "circle",
+      source: "pr-facilities",
+      minzoom: FACILITY_MIN_ZOOM,
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 11.5, 3.5, 15, 6],
+        "circle-color": c.cluster,
+        "circle-stroke-color": FACILITY_COLOR,
+        "circle-stroke-width": 2,
+        "circle-opacity": ["case", ["get", "inactive"], 0.4, 1],
+        "circle-stroke-opacity": ["case", ["get", "inactive"], 0.4, 1],
       },
     },
     {
@@ -269,6 +302,7 @@ function installCityStyle(map: MapLibreMap, theme: MapTheme, view: MapView) {
     clusterMaxZoom: 14,
   });
   map.addSource("pr-route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addSource("pr-facilities", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   try {
     map.addLayer(buildingLayer(theme), firstSymbol);
   } catch {
@@ -298,7 +332,7 @@ function applyDepth(map: MapLibreMap, theme: MapTheme, view: MapView) {
 }
 
 export function OpsMap(props: OpsMapProps) {
-  const { onSelect, route = null, focus = null, view = "3d", theme = "light", onShowClosed, ...input } = props;
+  const { onSelect, routes = null, focus = null, view = "3d", theme = "light", onShowClosed, ...input } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerCtor = useRef<typeof Marker | null>(null);
@@ -318,7 +352,9 @@ export function OpsMap(props: OpsMapProps) {
   const [layersOpen, setLayersOpen] = useState(false);
   const [layers, setLayers] = useState<Record<Layer, boolean>>({
     cameras: true,
-    stations: true,
+    fire: true,
+    ambulance: true,
+    police: true,
     incidents: true,
   });
 
@@ -385,7 +421,11 @@ export function OpsMap(props: OpsMapProps) {
           const id = event.features?.[0]?.properties?.id;
           if (typeof id === "string") onSelectRef.current({ kind: "camera", id });
         });
-        for (const id of ["pr-cluster", "pr-camera-point"]) {
+        map.on("click", "pr-facility-point", (event) => {
+          const id = event.features?.[0]?.properties?.id;
+          if (typeof id === "string") onSelectRef.current({ kind: "station", id });
+        });
+        for (const id of ["pr-cluster", "pr-camera-point", "pr-facility-point"]) {
           map.on("mouseenter", id, () => (map.getCanvas().style.cursor = "pointer"));
           map.on("mouseleave", id, () => (map.getCanvas().style.cursor = ""));
         }
@@ -427,7 +467,9 @@ export function OpsMap(props: OpsMapProps) {
   );
   const specs = useMemo(() => buildMarkers(markerInput), [markerInput]);
   const features = useMemo(() => cameraFeatures(markerInput), [markerInput]);
-  const routeMode = !!route && route.length > 1;
+  const facilityPoints = useMemo(() => facilityFeatures(markerInput), [markerInput]);
+  const routeMode = !!routes && routes.length > 0;
+  const candidateIds = useMemo(() => [...candidateUnits(markerInput).keys()], [markerInput]);
 
   // Clustered quiet cameras: one GeoJSON source, updated only when the set changes.
   useEffect(() => {
@@ -437,13 +479,22 @@ export function OpsMap(props: OpsMapProps) {
 
   useEffect(() => {
     if (!styleReady) return;
+    mapRef.current?.getSource<GeoJSONSource>("pr-facilities")?.setData(facilityPoints);
+  }, [facilityPoints, styleReady, styleVersion]);
+
+  useEffect(() => {
+    if (!styleReady) return;
     mapRef.current?.getSource<GeoJSONSource>("pr-route")?.setData({
       type: "FeatureCollection",
-      features: routeMode
-        ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route } }]
-        : [],
+      features: (routes ?? [])
+        .filter((r) => r.coordinates.length > 1)
+        .map((r) => ({
+          type: "Feature" as const,
+          properties: { unit: r.unit, color: r.color },
+          geometry: { type: "LineString" as const, coordinates: r.coordinates },
+        })),
     });
-  }, [route, routeMode, styleReady, styleVersion]);
+  }, [routes, styleReady, styleVersion]);
 
   // Route mode: the clustered network recedes (HTML markers are dimmed in CSS).
   useEffect(() => {
@@ -455,7 +506,17 @@ export function OpsMap(props: OpsMapProps) {
     map.setPaintProperty("pr-cluster-count", "text-opacity", routeMode ? dim : 1);
     map.setPaintProperty("pr-camera-point", "circle-opacity", routeMode ? dim : pointOpacity());
     map.setPaintProperty("pr-camera-point", "circle-stroke-opacity", routeMode ? dim : pointOpacity());
+    map.setPaintProperty("pr-facility-point", "circle-opacity", routeMode ? dim : ["case", ["get", "inactive"], 0.4, 1]);
+    map.setPaintProperty("pr-facility-point", "circle-stroke-opacity", routeMode ? dim : ["case", ["get", "inactive"], 0.4, 1]);
   }, [routeMode, styleReady, styleVersion]);
+
+  // Facility layer toggles (Fire / Ambulance / Police) also filter the GL points.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleReady || !map.getLayer("pr-facility-point")) return;
+    const shown = (["ambulance", "police"] as const).filter((c) => layers[c]);
+    map.setFilter("pr-facility-point", ["in", ["get", "category"], ["literal", shown]]);
+  }, [layers, styleReady, styleVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -559,13 +620,14 @@ export function OpsMap(props: OpsMapProps) {
       map.easeTo({ center: framing[0], zoom: Math.max(map.getZoom(), 14.2), duration });
     } else {
       map.fitBounds(boundsOf(framing), {
-        // Extra room on the right for the incident label; the bottom-left route card.
-        padding: { top: 96, bottom: 140, left: 120, right: 180 },
+        // Extra room on the right for the incident label; in the response view the route summary
+        // card covers the bottom-left, so the routes are kept clear of it.
+        padding: routeMode ? { top: 80, bottom: 80, left: 300, right: 140 } : { top: 96, bottom: 140, left: 120, right: 180 },
         maxZoom: 14.5,
         duration,
       });
     }
-  }, [framingKey, framing, markersVersion]);
+  }, [framingKey, framing, markersVersion, routeMode]);
 
   const hidden = (Object.keys(layers) as Layer[]).filter((l) => !layers[l]);
   const motion = () => (prefersReducedMotion() ? 0 : 300);
@@ -577,6 +639,7 @@ export function OpsMap(props: OpsMapProps) {
         <div
           ref={container}
           data-testid="ops-map"
+          data-candidates={candidateIds.join(" ")}
           className={`ops-map h-full w-full ${routeMode ? "is-route-mode" : ""} ${hidden.map((l) => `hide-${l}`).join(" ")}`}
         />
       </div>
@@ -646,7 +709,13 @@ function ToolButton({
   );
 }
 
-const LAYER_LABEL: Record<Layer, string> = { cameras: "Cameras", stations: "Fire stations", incidents: "Incidents" };
+const LAYER_LABEL: Record<Layer, string> = {
+  cameras: "Cameras",
+  incidents: "Incidents",
+  fire: "Fire stations",
+  ambulance: "Ambulance",
+  police: "Police stations",
+};
 
 function LayersPanel({
   layers,
@@ -707,12 +776,18 @@ function LayersPanel({
           <LegendRow swatch={<span className="legend-dot is-pending" />}>Detection to review</LegendRow>
           <LegendRow swatch={<span className="legend-pin" />}>Confirmed incident (fire or smoke)</LegendRow>
           {showClosed && <LegendRow swatch={<span className="legend-pin is-closed" />}>Closed incident (history)</LegendRow>}
-          <LegendRow swatch={<span className="legend-station" />}>Fire station (demo availability)</LegendRow>
-          <LegendRow swatch={<span className="legend-station is-unavailable" />}>Station unavailable</LegendRow>
-          <LegendRow swatch={<span className="legend-route" />}>Suggested route (estimate)</LegendRow>
+          <LegendRow swatch={<span className="legend-station" />}>Fire station</LegendRow>
+          <LegendRow swatch={<span className="legend-station is-ambulance" />}>Ambulance facility</LegendRow>
+          <LegendRow swatch={<span className="legend-station is-police" />}>Police station</LegendRow>
+          <LegendRow swatch={<span className="legend-station is-unavailable" />}>Facility unavailable (demo flag)</LegendRow>
+          <LegendRow swatch={<span className="legend-route is-fire" />}>Fire route (estimate)</LegendRow>
+          <LegendRow swatch={<span className="legend-route is-ambulance" />}>Ambulance route (estimate)</LegendRow>
+          <LegendRow swatch={<span className="legend-route is-police" />}>Police route (estimate)</LegendRow>
         </ul>
       </div>
-      <p className="text-xs text-fg-3">Stations and roads © OpenStreetMap contributors, unverified.</p>
+      <p className="text-xs text-fg-3">
+        Facilities and roads © OpenStreetMap contributors, unverified. Police and ambulance points show from district zoom.
+      </p>
     </div>
   );
 }

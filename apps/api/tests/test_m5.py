@@ -214,7 +214,7 @@ def test_seed_never_deletes_and_is_idempotent_for_m5_fields(tmp_path):
         )
         session.commit()
         seed(session)
-        assert seed(session) == {"cameras": 0, "fire_stations": 0}
+        assert set(seed(session).values()) == {0}
         assert session.get(Camera, "legacy-extra") is not None
         assert session.scalar(select(func.count()).select_from(Camera)) == 180
 
@@ -349,6 +349,8 @@ def test_reset_cancels_runs_and_closes_only_scenario_data(tmp_path, clip):  # no
         "runs_cancelled": 1,
         "detections_closed": 0,
         "incidents_closed": 1,
+        "cameras_restored": 0,
+        "stations_restored": 0,
     }
     incident = client.get(f"{API}/incidents/{incident_id}").json()
     assert incident["status"] == "resolved"
@@ -459,9 +461,12 @@ def test_confirmation_stores_road_route_and_timeline_event(tmp_path, clip):  # n
     assert route["geometry"]["type"] == "LineString"
     assert route["is_estimate"] is True and "Not a dispatch" in route["note"]
     station = incident["station_selection"]["station"]
-    assert routes.calls == [
-        ((station["latitude"], station["longitude"]), (incident["latitude"], incident["longitude"]))
-    ]
+    # M6C: fire first, then the ambulance and police resources (one request each).
+    assert len(routes.calls) == 3
+    assert routes.calls[0] == (
+        (station["latitude"], station["longitude"]),
+        (incident["latitude"], incident["longitude"]),
+    )
     assert incident["timeline"][-1]["event_type"] == "route_generated"
     assert "not a dispatch" in incident["timeline"][-1]["message"]
     listed = client.get(f"{API}/incidents").json()["items"][0]["route"]

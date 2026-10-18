@@ -612,3 +612,14 @@ M4 above follows the user's brief. The remaining planned milestones (jobs, notif
 | 2026-10-17 | M5 scenarios on the real model (local) | Three runs through the web proxy / UI | Korangi FIRE 0.7274 38/57 (7.9 s); Clifton SMOKE 0.9268 18/57 (1.8 s); Lyari not detected, fire peak 0.5204 in 2 frames (1.8 s) |
 | 2026-10-17 | M5 browser end-to-end (local) | Headless Chrome over CDP, 1440×900 and 1366×768 | Automatic alert → review → confirm → route drawn; smoke reject; feed playing (`readyState` 4); reset (UI reload bug found and fixed) |
 | 2026-10-17 | M5 secret check | Build with `OPERATOR_API_KEY=SENTINEL-…`; `grep -rl` in `.next/static` | 0 files contain the value |
+
+## M6A–M6C — Product polish and multi-agency response (DONE locally 2026-10-18; not yet committed or deployed)
+
+- **M6A** (UI redesign) and **M6B** (productization: landing + intro, Pakistan-based demo feeds with provenance, dark mode, settings, resets, merge rule, scenarios): see README and Techspec.
+- **M6C** (final feature milestone): multi-agency response suggestions.
+  - Data: 11 fire, 76 police, 19 ambulance facilities, all real OSM elements (unverified), 0 simulated.
+  - Migration `0004` (facility `category`, `incident.response_units`, two timeline event types).
+  - Selection: Haversine nearest available per category. Routing: OSRM per unit with per-unit straight-line fallback.
+  - Web: Suggested response panel, three route colours (fire #E5484D, ambulance #16A36A, police #2563EB), route toggles, facility layers.
+  - Checks: pytest 168 passed; ruff check/format clean; web 96 tests, lint, typecheck and build clean; browser walkthrough at 1440×900 and 1366×768 with live OSRM routes (9.3 km / 2.0 km / 5.3 km), no console errors.
+- **Decision (2026-10-18, user brief M6C):** police and ambulance move from "deferred" to *suggested response resources only*. Detection, dispatch and notification for them remain out of scope.

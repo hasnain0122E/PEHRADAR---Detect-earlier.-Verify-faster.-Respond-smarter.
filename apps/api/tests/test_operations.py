@@ -130,12 +130,18 @@ def test_neon_style_url_uses_psycopg_driver():
 def test_seed_is_idempotent_and_keeps_status_toggles(tmp_path):
     app = make_db_app(tmp_path, seeded=False)
     with app.state.sessionmaker() as session:
-        assert seed(session) == {"cameras": 179, "fire_stations": 11}
+        assert seed(session) == {
+            "cameras": 179,
+            "fire_stations": 11,
+            "police_stations": 76,
+            "ambulance_stations": 19,
+        }
         session.get(FireStation, STATION_SADDAR).status = "unavailable"
         session.commit()
-        assert seed(session) == {"cameras": 0, "fire_stations": 0}
+        assert set(seed(session).values()) == {0}
         assert session.get(FireStation, STATION_SADDAR).status == "unavailable"
-        assert session.scalar(select(func.count()).select_from(FireStation)) == 11
+        # One table: 11 fire, 76 police and 19 ambulance stations (M6C).
+        assert session.scalar(select(func.count()).select_from(FireStation)) == 106
 
 
 # --- cameras and stations ---
@@ -242,7 +248,11 @@ def test_confirmation_creates_incident_with_nearest_station_and_timeline(tmp_pat
         (1, "detection_created"),
         (2, "operator_confirmed"),
         (3, "station_selected"),
-        (4, "route_unavailable"),  # tests run with routing disabled: straight-line fallback
+        (4, "resource_selected"),  # M6C ambulance
+        (5, "resource_selected"),  # M6C police
+        (6, "route_unavailable"),  # tests run with routing disabled: straight-line fallback
+        (7, "route_unavailable"),
+        (8, "route_unavailable"),
     ]
     assert incident["timeline"][1]["actor_label"] == "Operator A"
 
@@ -329,7 +339,7 @@ def test_no_available_station_leaves_incident_confirmed(tmp_path, clip):  # noqa
 
     assert incident["status"] == "confirmed"
     assert incident["station_selection"] is None
-    assert incident["timeline"][-1]["event_type"] == "no_station_available"
+    assert "no_station_available" in [t["event_type"] for t in incident["timeline"]]
 
 
 class _Station:
@@ -389,12 +399,16 @@ def test_valid_status_transitions_append_timeline_in_order(tmp_path, clip):  # n
         (1, "detection_created"),
         (2, "operator_confirmed"),
         (3, "station_selected"),
-        (4, "route_unavailable"),
-        (5, "status_changed"),
-        (6, "status_changed"),
-        (7, "resolved"),
+        (4, "resource_selected"),
+        (5, "resource_selected"),
+        (6, "route_unavailable"),
+        (7, "route_unavailable"),
+        (8, "route_unavailable"),
+        (9, "status_changed"),
+        (10, "status_changed"),
+        (11, "resolved"),
     ]
-    assert "PehRadar sent no notification" in incident["timeline"][4]["message"]
+    assert "PehRadar sent no notification" in incident["timeline"][8]["message"]
 
 
 @pytest.mark.parametrize(

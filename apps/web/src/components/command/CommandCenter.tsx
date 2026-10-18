@@ -3,10 +3,11 @@
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type { OpsApi } from "@/lib/api/client";
-import type { Camera, Detection, Incident, IncidentDetail, ResetScope, Scenario } from "@/lib/api/types";
+import type { Camera, Detection, Incident, IncidentDetail, ResetScope, ResponseUnitKind, Scenario } from "@/lib/api/types";
 import { buildActivity, cityStats, isLiveRun, type LocalEvent } from "@/lib/city";
 import { confidencePct, isActiveIncident } from "@/lib/ops";
 import { usePreferences, useResolvedTheme } from "@/lib/preferences";
+import { ALL_UNITS_VISIBLE, mapRoutes, responseUnits, routeOk, UNIT_VIEW } from "@/lib/response";
 
 import { Icon } from "../icons";
 import { boundsOf, type MapFocus, type MapView, OpsMap, type OpsMapProps, prefersReducedMotion } from "../map/OpsMap";
@@ -75,6 +76,8 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
   const view = viewChoice ?? (reducedMotion ? "2d" : prefs.defaultView);
   const [zone, setZone] = useState(ALL_ZONES);
   const [routeFor, setRouteFor] = useState<string | null>(null);
+  // M6C: which suggested routes are drawn (all three by default when the response view opens).
+  const [routeUnits, setRouteUnits] = useState<Record<ResponseUnitKind, boolean>>(ALL_UNITS_VISIBLE);
   const [analysis, setAnalysis] = useState<AnalysisState | null>(null);
   const [detections, setDetections] = useState<Record<string, Detection>>({});
   const [confirmed, setConfirmed] = useState<IncidentDetail | null>(null);
@@ -164,6 +167,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
       const result = await resetScenarioData(scope);
       setAlerts([]);
       setRouteFor(null);
+      setRouteUnits(ALL_UNITS_VISIBLE);
       setNotice(null);
       setAnalysis(null);
       setConfirmed(null);
@@ -360,11 +364,13 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
     return source?.kind === "upload" ? "Operator-uploaded test clip" : "Test clip";
   };
 
-  // Route mode: only for the selected incident, only after "Show route".
+  // Response view: only for the selected incident, only after "Show routes". One road route per
+  // suggested unit (fire red, ambulance green, police blue), each switchable.
   const routeIncident =
     selection?.kind === "incident" && routeFor === selection.id && incidentDetail?.id === selection.id ? incidentDetail : null;
-  const shownRoute = routeIncident?.route?.status === "ok" ? routeIncident.route : null;
-  const selectedRoute = shownRoute?.geometry?.coordinates ?? null;
+  const routeUnitList = routeIncident ? responseUnits(routeIncident) : [];
+  const shownRoutes = routeIncident ? mapRoutes(routeUnitList, routeUnits) : null;
+  const routedUnits = routeUnitList.filter((u) => routeOk(u.route));
 
   const busyCamera = isRunning(analysis) ? data.cameras.find((c) => c.id === analysis?.cameraId) : undefined;
 
@@ -443,7 +449,12 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
             onSelectStation={(id) => select({ kind: "station", id })}
             onLoaded={setIncidentDetail}
             routeShown={routeFor === selection.id}
-            onToggleRoute={() => setRouteFor((r) => (r === selection.id ? null : selection.id))}
+            onToggleRoute={() => {
+              setRouteUnits(ALL_UNITS_VISIBLE); // every new response view starts with all three
+              setRouteFor((r) => (r === selection.id ? null : selection.id));
+            }}
+            visibleUnits={routeUnits}
+            onToggleUnit={(unit) => setRouteUnits((v) => ({ ...v, [unit]: !v[unit] }))}
           />
         );
       case "station": {
@@ -516,7 +527,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
               analyzingCameraId={isRunning(analysis) ? (analysis?.cameraId ?? null) : null}
               scenarioCameraIds={scenarioCameraIds}
               selection={selection}
-              route={selectedRoute}
+              routes={shownRoutes}
               focus={focus}
               view={view}
               theme={theme}
@@ -550,29 +561,41 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
               onDismiss={dismiss}
             />
 
-            {shownRoute && routeIncident && (
+            {routeIncident && routedUnits.length > 0 && (
               <div
                 aria-label="Route summary"
-                className={`pr-toast absolute bottom-10 z-10 grid w-60 gap-3 rounded-xl border border-line bg-surface p-4 shadow-float ${
+                className={`pr-toast absolute bottom-10 z-10 grid w-64 gap-3 rounded-xl border border-line bg-surface p-4 shadow-float ${
                   listOpen ? "left-[352px] max-lg:left-4" : "left-4"
                 }`}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="grid gap-0.5">
-                    <p className="flex items-center gap-1.5 text-xs font-medium text-info">
-                      <Icon name="route" size={14} />
-                      Suggested response
-                    </p>
-                    <p className="text-sm font-semibold">{routeIncident.station_selection?.station.name ?? "Candidate station"}</p>
-                  </div>
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-info">
+                    <Icon name="route" size={14} />
+                    Suggested response
+                  </p>
                   <button type="button" aria-label="Exit route view" className={`${ICON_BUTTON} -mt-1 -mr-1 h-7 w-7`} onClick={() => setRouteFor(null)}>
                     <Icon name="x" size={16} />
                   </button>
                 </div>
-                <p className="flex items-baseline gap-4">
-                  <span className="text-[22px] leading-7 font-semibold tabular-nums">{shownRoute.distance_km.toFixed(1)} km</span>
-                  <span className="text-[22px] leading-7 font-semibold tabular-nums">{etaMin(shownRoute)} min</span>
-                </p>
+                <ul className="grid gap-2.5">
+                  {routedUnits.map((u) => {
+                    const route = u.route;
+                    if (!routeOk(route)) return null;
+                    return (
+                      <li key={u.unit} className={`grid grid-cols-[4px_1fr_auto] items-center gap-2.5 ${routeUnits[u.unit] ? "" : "opacity-40"}`}>
+                        <span aria-hidden className="h-8 rounded-full" style={{ background: UNIT_VIEW[u.unit].color }} />
+                        <span className="grid min-w-0">
+                          <span className="text-xs text-fg-2">{UNIT_VIEW[u.unit].label}</span>
+                          <span className="truncate text-[13px] font-semibold">{u.facility.name}</span>
+                        </span>
+                        <span className="text-right text-[13px] font-semibold tabular-nums">
+                          {route.distance_km.toFixed(1)} km
+                          <span className="block text-xs font-normal text-fg-2">{etaMin(route)} min</span>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
                 <p className="text-xs text-fg-2">Road estimate · not a dispatch</p>
               </div>
             )}

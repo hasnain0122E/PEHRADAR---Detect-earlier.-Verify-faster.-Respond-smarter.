@@ -259,19 +259,21 @@ def test_demo_reset_keeps_history_and_full_reset_clears_it(tmp_path, clip):  # n
 
     demo = client.post(f"{API}/scenarios/reset", json={"scope": "demo"}, headers=AUTH).json()
     assert demo["scope"] == "demo" and demo["incidents_closed"] == 1
+    assert demo["cameras_restored"] == 179  # M6C: demo status changes are undone too
     assert count(client, Incident) == 1  # history kept, closed
     assert client.get(f"{API}/incidents").json()["items"][0]["status"] == "resolved"
 
     full = client.post(f"{API}/scenarios/reset", json={"scope": "full"}, headers=AUTH).json()
     assert full["scope"] == "full"
     assert full["incidents_deleted"] == 1 and full["detections_deleted"] == 1
-    assert full["scenario_runs_deleted"] == 1 and full["cameras_restored"] == 179
+    assert full["scenario_runs_deleted"] == 1 and full["cameras_restored"] == 0
     for model in (Incident, DetectionEvent, ScenarioRun):
         assert count(client, model) == 0
     # Seeded base data stays: every node, station and demo feed.
     cameras = client.get(f"{API}/cameras").json()["items"]
     assert len(cameras) == 179 and all(c["status"] == "active" for c in cameras)
     assert len(client.get(f"{API}/fire-stations").json()["items"]) == 11
+    assert len(client.get(f"{API}/response-facilities").json()["items"]) == 11 + 76 + 19
     assert client.get(f"{API}/cameras/{KORANGI}").json()["feed"]["country"] == "Pakistan"
     assert start(client).status_code == 200  # scenarios run again after a full reset
 

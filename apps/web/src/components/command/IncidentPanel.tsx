@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 
 import type { OpsApi } from "@/lib/api/client";
-import type { FireStation, IncidentDetail, IncidentRoute, TimelineEvent } from "@/lib/api/types";
+import type { FireStation, IncidentDetail, ResponseUnit, ResponseUnitKind, TimelineEvent } from "@/lib/api/types";
 import { FACILITY_LABEL } from "@/lib/city";
 import { confidencePct, EVENT_LABEL, pktDateTime, pktTime, SEVERITY_VIEW, timelineView } from "@/lib/ops";
+import { categoryOf, RESPONSE_DISCLAIMER, RESPONSE_UNITS, responseUnits, routeOk, UNIT_VIEW } from "@/lib/response";
 
 import { Icon } from "../icons";
 import { describeError } from "./useOpsData";
@@ -44,6 +45,9 @@ interface IncidentPanelProps {
   onLoaded?: (detail: IncidentDetail) => void;
   routeShown: boolean;
   onToggleRoute: () => void;
+  /** M6C: which suggested routes are drawn while the response view is open. */
+  visibleUnits?: Record<ResponseUnitKind, boolean>;
+  onToggleUnit?: (unit: ResponseUnitKind) => void;
 }
 
 const INCIDENT_TITLE: Record<IncidentDetail["event_type"], string> = {
@@ -93,7 +97,6 @@ export function IncidentPanel(props: IncidentPanelProps) {
     );
   }
 
-  const selection = incident.station_selection;
   const sev = SEVERITY_VIEW[incident.severity];
   return (
     <div className="grid gap-6">
@@ -150,95 +153,152 @@ export function IncidentPanel(props: IncidentPanelProps) {
         </dl>
       </div>
 
-      <section aria-labelledby="station-title" className="grid gap-3">
-        <SectionTitle>
-          <span id="station-title">Response facility</span>
-        </SectionTitle>
-        {selection ? (
-          <div className="grid gap-4 rounded-lg border border-line p-4">
-            <StationSummary
-              station={selection.station}
-              distanceKm={selection.distance_km}
-              onSelect={() => onSelectStation(selection.station.id)}
-            />
-            <RouteSummary route={incident.route} shown={props.routeShown} onToggle={props.onToggleRoute} />
-          </div>
-        ) : (
-          <p className="rounded-lg bg-warn-soft px-3 py-2.5 text-[13px] text-warn-ink">
-            No fire station is marked available in the demo data, so no candidate was selected.
-          </p>
-        )}
-      </section>
+      <SuggestedResponse
+        incident={incident}
+        onSelectStation={onSelectStation}
+        shown={props.routeShown}
+        onToggle={props.onToggleRoute}
+        visible={props.visibleUnits}
+        onToggleUnit={props.onToggleUnit}
+      />
 
       <Timeline events={incident.timeline} />
     </div>
   );
 }
 
-function RouteSummary({ route, shown, onToggle }: { route: IncidentRoute | null; shown: boolean; onToggle: () => void }) {
-  if (!route) {
-    return <Note>{CANDIDATE_DISCLAIMER}</Note>;
-  }
-  if (route.status !== "ok") {
-    return (
-      <div className="grid gap-2">
-        <p className="text-[13px] text-warn-ink">Road route unavailable; straight-line distance shown.</p>
-        <Note>{CANDIDATE_DISCLAIMER}</Note>
-      </div>
-    );
-  }
+const MISSING: Record<ResponseUnitKind, string> = {
+  fire: "No fire station is marked available in the demo data.",
+  ambulance: "No ambulance facility is marked available in the demo data.",
+  police: "No police station is marked available in the demo data.",
+};
+
+/** M6C: the three suggested response resources, each with its road estimate and route colour. */
+function SuggestedResponse({
+  incident,
+  onSelectStation,
+  shown,
+  onToggle,
+  visible,
+  onToggleUnit,
+}: {
+  incident: IncidentDetail;
+  onSelectStation: (id: string) => void;
+  shown: boolean;
+  onToggle: () => void;
+  visible?: Record<ResponseUnitKind, boolean>;
+  onToggleUnit?: (unit: ResponseUnitKind) => void;
+}) {
+  const units = responseUnits(incident);
+  const byUnit = new Map(units.map((u) => [u.unit, u]));
+  // Incidents from before M6C only ever had a fire candidate: show that row alone.
+  const rows = incident.response_units ? RESPONSE_UNITS : (["fire"] as ResponseUnitKind[]);
+  const routed = units.filter((u) => routeOk(u.route));
+  const generated = routed[0]?.route;
   return (
-    <div className="grid gap-3">
-      <dl className="grid grid-cols-2 gap-3">
-        <div className="grid gap-0.5">
-          <dt className="text-xs text-fg-2">Road distance</dt>
-          <dd className="text-[22px] leading-7 font-semibold tabular-nums">{route.distance_km.toFixed(1)} km</dd>
-        </div>
-        <div className="grid gap-0.5">
-          <dt className="text-xs text-fg-2">Estimated travel</dt>
-          <dd className="text-[22px] leading-7 font-semibold tabular-nums">{etaMin(route)} min</dd>
-        </div>
-      </dl>
-      <button type="button" aria-pressed={shown} className={shown ? BUTTON_SECONDARY : BUTTON_PRIMARY} onClick={onToggle}>
-        <Icon name="route" size={16} />
-        {shown ? "Hide route" : "Show route"}
-      </button>
-      <Note>{ROUTE_DISCLAIMER}</Note>
-      <p className="text-xs text-fg-3">
-        {route.provider.toUpperCase()} {route.profile} estimate on OpenStreetMap roads, {pktTime(route.generated_at)} PKT.
-        Free-flow: no traffic, signals or emergency-vehicle rules.
-      </p>
-    </div>
+    <section aria-labelledby="response-title" className="grid gap-3">
+      <SectionTitle>
+        <span id="response-title">Suggested response</span>
+      </SectionTitle>
+      <div className="grid gap-4 rounded-lg border border-line p-4">
+        <ul className="grid gap-3">
+          {rows.map((unit) => (
+            <UnitRow key={unit} unit={unit} entry={byUnit.get(unit)} onSelect={onSelectStation} />
+          ))}
+        </ul>
+        {routed.length > 0 && (
+          <div className="grid gap-3">
+            <button type="button" aria-pressed={shown} className={shown ? BUTTON_SECONDARY : BUTTON_PRIMARY} onClick={onToggle}>
+              <Icon name="route" size={16} />
+              {shown ? "Hide routes" : routed.length > 1 ? "Show all routes" : "Show route"}
+            </button>
+            {shown && visible && onToggleUnit && routed.length > 1 && (
+              <div role="group" aria-label="Routes on map" className="flex flex-wrap gap-2">
+                {routed.map((u) => (
+                  <button
+                    key={u.unit}
+                    type="button"
+                    aria-pressed={visible[u.unit]}
+                    onClick={() => onToggleUnit(u.unit)}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[13px] font-medium transition-colors ${FOCUS} ${
+                      visible[u.unit] ? "border-line bg-surface text-fg" : "border-dashed border-line-strong text-fg-3"
+                    }`}
+                  >
+                    <span
+                      aria-hidden
+                      className="grid h-4 w-4 place-items-center rounded text-white"
+                      style={{ background: visible[u.unit] ? UNIT_VIEW[u.unit].color : "var(--color-fg-3)" }}
+                    >
+                      {visible[u.unit] && <Icon name="check" size={12} />}
+                    </span>
+                    {UNIT_VIEW[u.unit].label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        <Note>{RESPONSE_DISCLAIMER}</Note>
+        {generated && routeOk(generated) && (
+          <p className="text-xs text-fg-3">
+            {generated.provider.toUpperCase()} {generated.profile} estimates on OpenStreetMap roads, {pktTime(generated.generated_at)} PKT.
+            Free-flow: no traffic, signals or emergency-vehicle rules. Facility availability is a demo flag.
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
 
-function StationSummary({
-  station,
-  distanceKm,
+function UnitRow({
+  unit,
+  entry,
   onSelect,
 }: {
-  station: FireStation;
-  distanceKm: number;
-  onSelect: () => void;
+  unit: ResponseUnitKind;
+  entry: ResponseUnit | undefined;
+  onSelect: (id: string) => void;
 }) {
+  const view = UNIT_VIEW[unit];
+  const route = entry?.route ?? null;
   return (
-    <div className="flex items-start justify-between gap-3">
-      <div className="grid gap-0.5">
-        <button
-          type="button"
-          onClick={onSelect}
-          className={`text-left text-[15px] font-semibold underline-offset-2 hover:underline ${FOCUS}`}
-        >
-          {station.name}
-        </button>
-        <p className="text-[13px] text-fg-2">
-          <span className="tabular-nums">{distanceKm.toFixed(2)} km</span> straight-line distance (not a driving route or ETA)
-        </p>
-      </div>
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-ok-soft text-ok-ink">
-        <Icon name="station" size={16} />
+    <li aria-label={`${view.label} response`} className="grid grid-cols-[32px_1fr_auto] items-center gap-3">
+      <span
+        aria-hidden
+        className="grid h-8 w-8 place-items-center rounded-lg text-white"
+        style={{ background: entry ? view.color : "var(--color-fg-3)" }}
+      >
+        <Icon name={view.icon} size={16} />
       </span>
-    </div>
+      <div className="grid min-w-0 gap-0.5">
+        <span className="text-xs font-medium" style={{ color: view.color }}>
+          {view.label}
+        </span>
+        {entry ? (
+          <button
+            type="button"
+            onClick={() => onSelect(entry.facility.id)}
+            className={`truncate text-left text-[14px] font-semibold underline-offset-2 hover:underline ${FOCUS}`}
+            title={entry.facility.name}
+          >
+            {entry.facility.name}
+          </button>
+        ) : (
+          <span className="text-[13px] text-fg-2">{MISSING[unit]}</span>
+        )}
+        {entry && !routeOk(route) && (
+          <span className="text-xs text-warn-ink">
+            Road route unavailable; {entry.distance_km.toFixed(1)} km straight-line
+          </span>
+        )}
+      </div>
+      {entry && routeOk(route) && (
+        <span className="text-right tabular-nums">
+          <span className="block text-[15px] font-semibold">{route.distance_km.toFixed(1)} km</span>
+          <span className="block text-xs text-fg-2">{etaMin(route)} min</span>
+        </span>
+      )}
+    </li>
   );
 }
 
@@ -292,6 +352,12 @@ export function Timeline({ events }: { events: TimelineEvent[] }) {
   );
 }
 
+const CATEGORY_TAG: Record<"fire" | "ambulance" | "police", string> = {
+  fire: "Fire response",
+  ambulance: "Ambulance / EMS",
+  police: "Police",
+};
+
 export function StationPanel({
   station,
   onSetStatus,
@@ -315,7 +381,9 @@ export function StationPanel({
           <Tag tone={available ? "bg-ok-soft text-ok-ink" : "bg-muted text-fg-2"}>
             {available ? "Available" : "Unavailable"}
           </Tag>
-          <span className="text-[13px] text-fg-2">{FACILITY_LABEL[station.facility_type]}</span>
+          <span className="text-[13px] text-fg-2">
+            {station.category && station.category !== "fire" ? CATEGORY_TAG[categoryOf(station)] : FACILITY_LABEL[station.facility_type]}
+          </span>
           {onSetStatus && (
             <button
               type="button"

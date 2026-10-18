@@ -28,7 +28,7 @@ describe("display rules", () => {
     expect(INCIDENT_DETAIL.timeline.map((e) => timelineView(e).label)).toEqual([
       "Detected",
       "Confirmed",
-      "Station selected",
+      "Fire station selected",
     ]);
     const changed = { ...INCIDENT_DETAIL.timeline[0], event_type: "status_changed" as const };
     expect(timelineView({ ...changed, details: { to: "notified" } }).label).toBe("Notified");

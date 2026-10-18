@@ -121,6 +121,7 @@ The live URLs and verification results are recorded in `Tracker.md`. No producti
 - With `APP_ENV=production` and `CORS_ORIGINS` unset, the API serves direct requests (curl, opening the URL in a browser) but **allows no cross-origin browser calls**. A wildcard is never used. Production also requires `https://` origins and disables `/api/v1/docs`.
 - M6B adds migration `0003` (camera `feed_meta`, `detection_merged` timeline event); the start command's `alembic upgrade head` applies it, and the seed then assigns the Pakistan-based demo feeds to 156 nodes. The demo clips live in `apps/api/demo_assets/` (committed; see `SOURCES.md`).
 - The web app now serves the landing page at `/` and the command center at `/monitor`.
+- M6C adds migration `0004` (facility `category`, `incident.response_units`); the same start command applies it and the seed adds 76 police and 19 ambulance stations from `seed/karachi_response_facilities.json`. No new environment variables. Each confirmed incident makes up to three OSRM requests (fire, ambulance, police), sent one after another.
 - `/` returns 404 by design. The public check URL is `https://<service>.onrender.com/api/v1/health`.
 
 ### Web on Vercel (after the API is live)
@@ -135,3 +136,11 @@ The live URLs and verification results are recorded in `Tracker.md`. No producti
 | Env `OPERATOR_API_KEY` | M4: the same value as on Render. **Server-only**: not `NEXT_PUBLIC_`. Mark it Sensitive. Used by the `/api/operator/*` proxy. |
 
 `NEXT_PUBLIC_API_BASE_URL` is inlined at build time, so changing it requires a redeploy. After Vercel assigns its domain, set `CORS_ORIGINS=https://<your-vercel-domain>` on Render. Vercel preview deployments use different origins and will show "Disconnected" unless their origin is added too.
+
+## Multi-agency response (M6C)
+
+Every confirmed incident gets three **suggested** response resources: the nearest available fire station, ambulance facility and police station (straight-line selection on demo availability flags), each with an OSRM road route drawn in its own colour: **fire red `#E5484D`, ambulance green `#16A36A`, police blue `#2563EB`**.
+
+- Facilities: 11 fire, 76 police and 19 ambulance stations, all OpenStreetMap elements (ODbL-1.0), unverified with the services. Curation rules: `apps/api/seed/build_response_facilities.py`.
+- Routes are free-flow estimates from the public OSRM server. If one unit's route fails, that unit shows its straight-line distance and the others are unaffected.
+- **No real dispatch integration.** PehRadar never contacts the fire service, police or an ambulance service and never confirms real-world availability.

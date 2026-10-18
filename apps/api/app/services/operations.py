@@ -157,6 +157,7 @@ def confirm_detection(
         actor_label=operator,
     )
     _select_station(session, incident)
+    _select_units(session, incident)
     _commit(session, "DETECTION_ALREADY_REVIEWED", "This detection was already reviewed")
     return incident, False
 
@@ -240,18 +241,37 @@ def set_station_status(session: Session, station_id: str, status: str) -> FireSt
 
 
 def attach_route(session: Session, incident_id: str, provider: RouteProvider | None) -> None:
-    """Suggested road route from the candidate station to the incident, stored on the incident.
+    """Suggested road routes from every selected response facility to the incident (M5: fire;
+    M6C: also ambulance and police), stored on the incident.
 
     Runs after the confirmation has committed, so a routing failure can never undo or block the
-    incident: it falls back to the straight-line distance and records why."""
+    incident. Each unit is routed on its own: a failure falls back to that unit's straight-line
+    distance, records why, and never affects the other units. Requests are sequential (the
+    public OSRM server allows about one request per second)."""
     incident = session.get(Incident, incident_id)
-    if incident is None or incident.station is None:
+    if incident is None:
         return
-    station = incident.station
-    origin, destination = (
-        (station.latitude, station.longitude),
-        (incident.latitude, incident.longitude),
-    )
+    if incident.station is not None and incident.route is None:
+        incident.route = _road_route(provider, incident.station, incident)
+        _log_route(incident, "fire", incident.station, incident.route)
+    units = dict(incident.response_units or {})
+    for unit in ("ambulance", "police"):
+        entry = units.get(unit)
+        if not entry or entry.get("route") is not None:
+            continue
+        facility = session.get(FireStation, entry["facility_id"])
+        if facility is None:
+            continue
+        route = _road_route(provider, facility, incident)
+        units[unit] = {**entry, "route": route}
+        _log_route(incident, unit, facility, route)
+    incident.response_units = units or None
+    _commit(session, "CONCURRENT_UPDATE", "The incident was changed concurrently")
+
+
+def _road_route(provider: RouteProvider | None, facility: FireStation, incident: Incident) -> dict:
+    origin = (facility.latitude, facility.longitude)
+    destination = (incident.latitude, incident.longitude)
     now = utc_now()
     straight = straight_line_km(origin, destination)
     if provider is None:
@@ -261,12 +281,14 @@ def attach_route(session: Session, incident_id: str, provider: RouteProvider | N
             route = provider.route(origin, destination)
         except RoutingError as exc:
             reason = str(exc)
+        except Exception as exc:  # never let one unit's route break the others
+            reason = f"Routing failed: {type(exc).__name__}"
         else:
-            incident.route = {
+            return {
                 "status": "ok",
                 "provider": route.provider,
                 "profile": route.profile,
-                "from_station_id": station.id,
+                "from_station_id": facility.id,
                 "distance_km": route.distance_km,
                 "duration_min": route.duration_min,
                 "straight_line_km": straight,
@@ -275,24 +297,10 @@ def attach_route(session: Session, incident_id: str, provider: RouteProvider | N
                 "is_estimate": True,
                 "note": ROUTE_NOTE,
             }
-            _log(
-                incident,
-                "route_generated",
-                "system",
-                f"Suggested response route from {station.name}: {route.distance_km} km by road, "
-                f"about {route.duration_min:.0f} min ({route.provider} estimate; not a dispatch)",
-                {
-                    "provider": route.provider,
-                    "distance_km": route.distance_km,
-                    "duration_min": route.duration_min,
-                },
-            )
-            _commit(session, "CONCURRENT_UPDATE", "The incident was changed concurrently")
-            return
-    incident.route = {
+    return {
         "status": "unavailable",
         "provider": provider.name if provider else None,
-        "from_station_id": station.id,
+        "from_station_id": facility.id,
         "reason": reason,
         "fallback": "straight_line",
         "straight_line_km": straight,
@@ -300,14 +308,42 @@ def attach_route(session: Session, incident_id: str, provider: RouteProvider | N
         "is_estimate": True,
         "note": FALLBACK_NOTE,
     }
-    _log(
-        incident,
-        "route_unavailable",
-        "system",
-        f"Road route unavailable ({reason}); straight-line distance {straight} km shown instead",
-        {"reason": reason, "straight_line_km": straight},
-    )
-    _commit(session, "CONCURRENT_UPDATE", "The incident was changed concurrently")
+
+
+UNIT_NAME = {"fire": "Fire", "ambulance": "Ambulance", "police": "Police"}
+
+
+def _log_route(incident: Incident, unit: str, facility: FireStation, route: dict) -> None:
+    # Fire keeps its M5 wording; ambulance and police name their unit.
+    lead = "Suggested response route" if unit == "fire" else f"{UNIT_NAME[unit]} route"
+    if route["status"] == "ok":
+        _log(
+            incident,
+            "route_generated",
+            "system",
+            f"{lead} from {facility.name}: {route['distance_km']} km by road, about "
+            f"{route['duration_min']:.0f} min ({route['provider']} estimate; not a dispatch)",
+            {
+                "unit": unit,
+                "provider": route["provider"],
+                "distance_km": route["distance_km"],
+                "duration_min": route["duration_min"],
+            },
+        )
+    else:
+        prefix = "Road route" if unit == "fire" else f"{UNIT_NAME[unit]} road route"
+        _log(
+            incident,
+            "route_unavailable",
+            "system",
+            f"{prefix} unavailable ({route['reason']}); straight-line distance "
+            f"{route['straight_line_km']} km shown instead",
+            {
+                "unit": unit,
+                "reason": route["reason"],
+                "straight_line_km": route["straight_line_km"],
+            },
+        )
 
 
 def reject_detection(
@@ -374,7 +410,7 @@ def _pending_detection(session: Session, detection_id: str) -> DetectionEvent:
 
 
 def _select_station(session: Session, incident: Incident) -> None:
-    stations = session.scalars(select(FireStation)).all()
+    stations = session.scalars(select(FireStation).where(FireStation.category == "fire")).all()
     choice = nearest_available_station(incident.latitude, incident.longitude, stations)
     if choice is None:
         _log(
@@ -402,6 +438,45 @@ def _select_station(session: Session, incident: Incident) -> None:
             "is_driving_eta": False,
         },
     )
+
+
+UNIT_FACILITY = {"ambulance": "ambulance response facility", "police": "police station"}
+
+
+def _select_units(session: Session, incident: Incident) -> None:
+    """M6C: the nearest available ambulance and police facilities, chosen exactly like the fire
+    station (straight-line distance, demo availability flag). Never a dispatch."""
+    units: dict[str, dict] = {}
+    for unit in ("ambulance", "police"):
+        facilities = session.scalars(select(FireStation).where(FireStation.category == unit))
+        choice = nearest_available_station(incident.latitude, incident.longitude, facilities)
+        if choice is None:
+            _log(
+                incident,
+                "no_resource_available",
+                "system",
+                f"No {UNIT_FACILITY[unit]} is marked available; none suggested",
+                {"unit": unit, "method": STATION_METHOD},
+            )
+            continue
+        facility: FireStation = choice.station  # type: ignore[assignment]
+        distance = round(choice.distance_km, 2)
+        units[unit] = {
+            "facility_id": facility.id,
+            "distance_km": distance,
+            "method": STATION_METHOD,
+            "reason": f"Nearest {UNIT_FACILITY[unit]} marked available (straight-line distance)",
+            "route": None,
+        }
+        _log(
+            incident,
+            "resource_selected",
+            "system",
+            f"{UNIT_NAME[unit]} resource: {facility.name}, {distance} km straight-line "
+            "(availability not verified; not a dispatch)",
+            {"unit": unit, "station_id": facility.id, "distance_km": distance},
+        )
+    incident.response_units = units or None
 
 
 def _log(
@@ -444,7 +519,8 @@ def reset_scenario_data(session: Session) -> dict[str, int]:
     """Demo reset: cancels unfinished scenario runs, rejects pending scenario detections and closes
     open incidents that came from scenario detections. Nothing is deleted, every change is a
     normal review or timeline record, and upload-created data is never touched. Closed
-    incidents stay in history; the live map shows only active ones."""
+    incidents stay in history; the live map shows only active ones. Demo status changes (nodes
+    taken offline, facilities marked unavailable) are restored."""
     now = utc_now()
     runs = session.scalars(
         select(ScenarioRun).where(ScenarioRun.status.in_(("scheduled", "running")))
@@ -480,11 +556,20 @@ def reset_scenario_data(session: Session) -> dict[str, int]:
             {"from": previous, "to": "resolved", "reason": "demo_reset"},
             actor_label=RESET_LABEL,
         )
+    # M6C: demo status changes (simulated outages, facility availability) are undone too.
+    cameras = session.execute(
+        update(Camera).where(Camera.status != "active").values(status="active")
+    ).rowcount
+    facilities = session.execute(
+        update(FireStation).where(FireStation.status != "available").values(status="available")
+    ).rowcount
     _commit(session, "CONCURRENT_UPDATE", "Demo data changed concurrently; retry the reset")
     return {
         "runs_cancelled": len(runs),
         "detections_closed": len(pending),
         "incidents_closed": len(incidents),
+        "cameras_restored": cameras,
+        "stations_restored": facilities,
     }
 
 

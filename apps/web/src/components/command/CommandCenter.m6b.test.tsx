@@ -26,7 +26,7 @@ function StubMap(props: OpsMapProps) {
       data-testid="stub-map"
       data-theme={props.theme}
       data-show-closed={String(!!props.showClosed)}
-      data-route={JSON.stringify(props.route ?? null)}
+      data-route={JSON.stringify(props.routes ?? null)}
     >
       {buildMarkers(props).map((m) => (
         <button key={m.key} type="button" aria-label={m.label} onClick={() => props.onSelect(m.select)}>
@@ -118,7 +118,7 @@ describe("CommandCenter (M6B productization)", () => {
   it("full reset needs an explicit confirmation and clears temporary UI state", async () => {
     const api = renderCenter(fakeApi({ listIncidents: vi.fn().mockResolvedValue([INCIDENT]) }));
     fireEvent.click(await screen.findByRole("button", { name: /^Incident: FIRE/ }));
-    expect(await details().findByText("Response facility")).toBeInTheDocument();
+    expect(await details().findByText("Suggested response")).toBeInTheDocument();
 
     const settings = await openSettings();
     fireEvent.click(settings.getByRole("button", { name: "Full reset…" }));

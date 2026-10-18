@@ -69,6 +69,14 @@ export interface TimelineView {
   tone: string;
 }
 
+const UNIT_LABEL = { fire: "Fire", ambulance: "Ambulance", police: "Police" } as const;
+const UNIT_TONE = { fire: "bg-fire", ambulance: "bg-ok", police: "bg-info" } as const;
+/** M6C timeline events name their response unit; M5 fire-only events have none. */
+const unitOf = (event: TimelineEvent): keyof typeof UNIT_LABEL => {
+  const unit = event.details?.unit;
+  return unit === "ambulance" || unit === "police" ? unit : "fire";
+};
+
 export function timelineView(event: TimelineEvent): TimelineView {
   switch (event.event_type) {
     case "detection_created":
@@ -76,13 +84,19 @@ export function timelineView(event: TimelineEvent): TimelineView {
     case "operator_confirmed":
       return { label: "Confirmed", tone: "bg-fire" };
     case "station_selected":
-      return { label: "Station selected", tone: "bg-info" };
+      return { label: "Fire station selected", tone: "bg-fire" };
     case "no_station_available":
-      return { label: "No station available", tone: "bg-fire" };
+      return { label: "No fire station available", tone: "bg-fire" };
+    case "resource_selected":
+      return unitOf(event) === "police"
+        ? { label: "Police station selected", tone: "bg-info" }
+        : { label: "Ambulance response facility selected", tone: "bg-ok" };
+    case "no_resource_available":
+      return { label: unitOf(event) === "police" ? "No police station available" : "No ambulance available", tone: "bg-fg-3" };
     case "route_generated":
-      return { label: "Suggested route", tone: "bg-info" };
+      return { label: `${UNIT_LABEL[unitOf(event)]} route generated`, tone: UNIT_TONE[unitOf(event)] };
     case "route_unavailable":
-      return { label: "Route unavailable", tone: "bg-fg-3" };
+      return { label: `${UNIT_LABEL[unitOf(event)]} route unavailable`, tone: "bg-fg-3" };
     case "detection_merged":
       return { label: "Additional detection", tone: "bg-warn" };
     case "status_changed": {

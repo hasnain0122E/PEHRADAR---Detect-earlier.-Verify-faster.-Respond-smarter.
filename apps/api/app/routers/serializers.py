@@ -72,6 +72,7 @@ def station_json(s: FireStation) -> dict:
         "verification_status": s.verification_status,
         "operator": s.operator,
         "facility_type": s.facility_type,
+        "category": s.category,
         "availability_is_demo": s.availability_is_demo,
         "created_at": _ts(s.created_at),
     }
@@ -128,7 +129,56 @@ def station_selection_json(i: Incident) -> dict | None:
     }
 
 
-def incident_json(i: Incident, *, detail: bool, has_evidence: bool) -> dict:
+FIRE_REASON = "Nearest fire station marked available (straight-line distance)"
+
+
+def response_units_json(
+    i: Incident, detail: bool, facilities: dict[str, FireStation] | None
+) -> dict:
+    """M6C: the three suggested response resources. Fire comes from the M5 columns (unchanged for
+    fire-only clients); ambulance and police from incident.response_units. A unit is null when
+    nothing was selected (no facility available, or an incident confirmed before M6C)."""
+    units: dict[str, dict | None] = {"fire": None, "ambulance": None, "police": None}
+    if i.station is not None:
+        units["fire"] = {
+            "unit": "fire",
+            "facility": station_json(i.station),
+            "distance_km": i.station_distance_km,
+            "method": STATION_METHOD,
+            "reason": FIRE_REASON,
+            "route": route_json(i.route, detail),
+        }
+    for unit, entry in (i.response_units or {}).items():
+        facility = (facilities or {}).get(entry.get("facility_id"))
+        if unit not in units or facility is None:
+            continue
+        units[unit] = {
+            "unit": unit,
+            "facility": station_json(facility),
+            "distance_km": entry.get("distance_km"),
+            "method": entry.get("method", STATION_METHOD),
+            "reason": entry.get("reason"),
+            "route": route_json(entry.get("route"), detail),
+        }
+    return units
+
+
+def response_facility_ids(incidents: list[Incident]) -> set[str]:
+    return {
+        entry["facility_id"]
+        for i in incidents
+        for entry in (i.response_units or {}).values()
+        if entry.get("facility_id")
+    }
+
+
+def incident_json(
+    i: Incident,
+    *,
+    detail: bool,
+    has_evidence: bool,
+    facilities: dict[str, FireStation] | None = None,
+) -> dict:
     body = {
         "id": i.id,
         "event_type": i.event_type,
@@ -145,6 +195,7 @@ def incident_json(i: Incident, *, detail: bool, has_evidence: bool) -> dict:
         "confirmed_at": _ts(i.confirmed_at),
         "resolved_at": _ts(i.resolved_at),
         "route": route_json(i.route, detail),
+        "response_units": response_units_json(i, detail, facilities),
         "is_simulated": i.is_simulated,
         "created_at": _ts(i.created_at),
         "updated_at": _ts(i.updated_at),

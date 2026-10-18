@@ -22,6 +22,7 @@ from app.domain.incident_rules import (
     CAMERA_SOURCE_TYPES,
     CAMERA_STATUSES,
     DETECTION_EVENT_TYPES,
+    FACILITY_CATEGORIES,
     FACILITY_TYPES,
     INCIDENT_STATUSES,
     REVIEW_STATUSES,
@@ -87,8 +88,13 @@ class Camera(Base):
 
 
 class FireStation(Base):
+    """A response facility (M6C: fire, police or ambulance). The table keeps its M3 name so the
+    fire-station rows, their ids and incident.assigned_station_id stay untouched; `category`
+    says which service a row belongs to."""
+
     __tablename__ = "fire_station"
     __table_args__ = (
+        CheckConstraint(_in("category", FACILITY_CATEGORIES), name="ck_fire_station_category"),
         CheckConstraint(_in("status", STATION_STATUSES), name="ck_fire_station_status"),
         CheckConstraint(
             _in("verification_status", ("unverified", "verified")),
@@ -113,6 +119,7 @@ class FireStation(Base):
     verification_status: Mapped[str] = mapped_column(String(20), default="unverified")
     operator: Mapped[str | None] = mapped_column(String(160))
     facility_type: Mapped[str] = mapped_column(String(40), default="fire_station_unclassified")
+    category: Mapped[str] = mapped_column(String(20), default="fire", index=True)
     availability_is_demo: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now, onupdate=utc_now)
@@ -176,6 +183,10 @@ class Incident(Base):
     # M5: suggested road route from the candidate station (app.routing), or the straight-line
     # fallback when routing failed. An estimate, never a dispatch.
     route: Mapped[dict | None] = mapped_column(JSON)
+    # M6C: suggested ambulance and police resources, {"ambulance": {...}, "police": {...}}, each
+    # with facility_id, straight-line distance and its own route (or straight-line fallback).
+    # The fire resource stays in assigned_station_id / station_distance_km / route.
+    response_units: Mapped[dict | None] = mapped_column(JSON)
     is_simulated: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now, onupdate=utc_now)

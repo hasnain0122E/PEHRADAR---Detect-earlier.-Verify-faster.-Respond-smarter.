@@ -313,3 +313,10 @@ Likelihood (L) and Impact (I): H / M / L. Owner = the milestone that retires or 
 | R16 | **Scope creep** (police/ambulance, live CCTV, LLM features) | M | H | Tasks appear outside fire MVP | Rules.md prohibition. Deferred list. Nothing optional before M7 DONE. | all |
 | R17 | **Free-tier DB limits / cold start** (Neon suspends compute) | L | M | First request slow | Warm-up in demo procedure. Pool pre-ping. SQLite-on-volume fallback if the host supports volumes. | M1, M10 |
 | R18 | **Deadline slip** (date not yet known) | M | H | M7 not DONE by ~60% of available time | VS1-first ordering. Spikes time-boxed with fallbacks. Record a backup demo video once M7 is DONE. | all |
+
+### M6A–M6C — Product polish and multi-agency response (built and verified locally 2026-10-18; final build milestone)
+
+- **M6A:** light map-first command center redesign.
+- **M6B:** landing page and intro, Pakistan-based demo feeds, dark mode, settings, resets, incident merge rule, seven scenarios.
+- **M6C:** nearest fire, ambulance and police facility per confirmed incident, three coloured road routes, response panel and toggles, 76 police and 19 ambulance stations from OSM. Suggestions only: police and ambulance *detection*, dispatch and notifications stay out of scope (the deferred list below still applies to them).
+- After M6C the build phase is closed: no new product features.

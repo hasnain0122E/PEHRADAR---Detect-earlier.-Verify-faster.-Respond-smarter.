@@ -1,0 +1,970 @@
+{
+ "_about": "PehRadar M6C response facilities: Karachi police stations and ambulance stations from OpenStreetMap (ODbL-1.0, (c) OpenStreetMap contributors), retrieved 2026-10-18, curated by build_response_facilities.py. Locations are mapped, NOT verified with the police or the ambulance services; availability is a demo flag. Fire stations stay in karachi_network.json.",
+ "curation": {
+  "police_skipped": {
+   "not_a_station": 50,
+   "excluded_type": 8,
+   "outside_karachi": 0,
+   "duplicate": 12
+  },
+  "ambulance_skipped": {
+   "unnamed": 0,
+   "outside_karachi": 0,
+   "duplicate": 1
+  }
+ },
+ "police_stations": [
+  {
+   "code": "KHI-PS-001",
+   "name": "Darakhshan Police Station",
+   "latitude": 24.77871,
+   "longitude": 67.06525,
+   "location_label": "Saba Ave",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718484"
+  },
+  {
+   "code": "KHI-PS-002",
+   "name": "Clifton Police Station",
+   "latitude": 24.81363,
+   "longitude": 67.02903,
+   "location_label": "Hatim Alvi Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/3813611062"
+  },
+  {
+   "code": "KHI-PS-003",
+   "name": "Jackson Police Station",
+   "latitude": 24.8205,
+   "longitude": 66.97667,
+   "location_label": "East  Wharf Road Keamari",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785775157"
+  },
+  {
+   "code": "KHI-PS-004",
+   "name": "Awami Colony Police Station Korangi No 4",
+   "latitude": 24.82682,
+   "longitude": 67.1594,
+   "location_label": "Landhi Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785855519"
+  },
+  {
+   "code": "KHI-PS-005",
+   "name": "Gizri Police Station",
+   "latitude": 24.82756,
+   "longitude": 67.05944,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/596199609"
+  },
+  {
+   "code": "KHI-PS-006",
+   "name": "Defence Police Station",
+   "latitude": 24.83286,
+   "longitude": 67.07499,
+   "location_label": "Korangi Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718483"
+  },
+  {
+   "code": "KHI-PS-007",
+   "name": "Frere Town Police Station",
+   "latitude": 24.83738,
+   "longitude": 67.03505,
+   "location_label": "Frere Police Station Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718485"
+  },
+  {
+   "code": "KHI-PS-008",
+   "name": "Qaidabad Police Station",
+   "latitude": 24.83778,
+   "longitude": 67.21425,
+   "location_label": "Mehran Highway",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5103425091"
+  },
+  {
+   "code": "KHI-PS-009",
+   "name": "Landhi Police Station",
+   "latitude": 24.83801,
+   "longitude": 67.18257,
+   "location_label": "Landhi Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5133370635"
+  },
+  {
+   "code": "KHI-PS-010",
+   "name": "Sharpao Police Station",
+   "latitude": 24.83858,
+   "longitude": 67.21514,
+   "location_label": "Mehran Highway",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5103425096"
+  },
+  {
+   "code": "KHI-PS-011",
+   "name": "Baloch Colony Police Station",
+   "latitude": 24.84334,
+   "longitude": 67.08396,
+   "location_label": "Shaheed-e-Millat Express Way",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718480"
+  },
+  {
+   "code": "KHI-PS-012",
+   "name": "Mehmodabad Police Station",
+   "latitude": 24.84824,
+   "longitude": 67.06669,
+   "location_label": "Mehmoodabad Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718479"
+  },
+  {
+   "code": "KHI-PS-013",
+   "name": "Sharafi Goth Police Station",
+   "latitude": 24.84886,
+   "longitude": 67.20782,
+   "location_label": "Karachi",
+   "operator": "Sindh Police",
+   "facility_type": "police_station",
+   "source_ref": "osm:way/1424925356"
+  },
+  {
+   "code": "KHI-PS-014",
+   "name": "Kharadar Police Station",
+   "latitude": 24.85142,
+   "longitude": 67.00111,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:way/681267638"
+  },
+  {
+   "code": "KHI-PS-015",
+   "name": "Aram Bagh Police Station",
+   "latitude": 24.85185,
+   "longitude": 67.00884,
+   "location_label": "Belasis Street",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857328"
+  },
+  {
+   "code": "KHI-PS-016",
+   "name": "Docks Police Station",
+   "latitude": 24.85247,
+   "longitude": 66.99197,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:way/931241696"
+  },
+  {
+   "code": "KHI-PS-017",
+   "name": "Shah Latif Police Station",
+   "latitude": 24.85659,
+   "longitude": 67.26955,
+   "location_label": "National Highway",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4783144479"
+  },
+  {
+   "code": "KHI-PS-018",
+   "name": "Saddar Police Station",
+   "latitude": 24.858,
+   "longitude": 67.04841,
+   "location_label": "Shahrah e Faisal",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785775167"
+  },
+  {
+   "code": "KHI-PS-019",
+   "name": "Risala Police Station",
+   "latitude": 24.8592,
+   "longitude": 67.00498,
+   "location_label": "Nishtar Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785775164"
+  },
+  {
+   "code": "KHI-PS-020",
+   "name": "Baghdadi Police Station",
+   "latitude": 24.85969,
+   "longitude": 66.99513,
+   "location_label": "Rampart Row",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857335"
+  },
+  {
+   "code": "KHI-PS-021",
+   "name": "Napier Police Station",
+   "latitude": 24.86162,
+   "longitude": 67.00165,
+   "location_label": "Siddiq wahab Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857334"
+  },
+  {
+   "code": "KHI-PS-022",
+   "name": "Preedy Police Station",
+   "latitude": 24.86188,
+   "longitude": 67.02161,
+   "location_label": "Rambagh Quarter Rambagh Quarters,",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857331"
+  },
+  {
+   "code": "KHI-PS-023",
+   "name": "Steel Town Police Station",
+   "latitude": 24.86332,
+   "longitude": 67.33727,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4299884589"
+  },
+  {
+   "code": "KHI-PS-024",
+   "name": "Brigade Police Station",
+   "latitude": 24.86654,
+   "longitude": 67.04104,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:way/787288336"
+  },
+  {
+   "code": "KHI-PS-025",
+   "name": "Garden Police Station",
+   "latitude": 24.87007,
+   "longitude": 67.01818,
+   "location_label": "Hiranand Street",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785775154"
+  },
+  {
+   "code": "KHI-PS-026",
+   "name": "Mauripur Police Station",
+   "latitude": 24.87011,
+   "longitude": 66.92245,
+   "location_label": "Hawks Bay Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5091605505"
+  },
+  {
+   "code": "KHI-PS-027",
+   "name": "Shershah Police Station",
+   "latitude": 24.87248,
+   "longitude": 66.97357,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/11930012111"
+  },
+  {
+   "code": "KHI-PS-028",
+   "name": "Malir Police Station",
+   "latitude": 24.87494,
+   "longitude": 67.19303,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4737748610"
+  },
+  {
+   "code": "KHI-PS-029",
+   "name": "Soldier Bazar Police Station",
+   "latitude": 24.87506,
+   "longitude": 67.02886,
+   "location_label": "Gule Rana Colony Gul e Rana Colony Soldier Bazaar,",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785775165"
+  },
+  {
+   "code": "KHI-PS-030",
+   "name": "Kalakot Police Station",
+   "latitude": 24.87803,
+   "longitude": 67.00298,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:way/720118734"
+  },
+  {
+   "code": "KHI-PS-031",
+   "name": "Shah Faisal Police Station",
+   "latitude": 24.87969,
+   "longitude": 67.14564,
+   "location_label": "Azeem Pura Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4767920574"
+  },
+  {
+   "code": "KHI-PS-032",
+   "name": "Jamshed Quarter Police Station",
+   "latitude": 24.88242,
+   "longitude": 67.04183,
+   "location_label": "V2JR+WP2, Gokhale Rd, Jamshed Quarters Allama Binori Town,",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/12243742709"
+  },
+  {
+   "code": "KHI-PS-033",
+   "name": "BAHADURABAD Police Station",
+   "latitude": 24.88333,
+   "longitude": 67.08367,
+   "location_label": "Ameer Khusro Rd",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857326"
+  },
+  {
+   "code": "KHI-PS-034",
+   "name": "S.I.T.E Police Station",
+   "latitude": 24.88347,
+   "longitude": 66.97515,
+   "location_label": "Estate Avenue",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5091080689"
+  },
+  {
+   "code": "KHI-PS-035",
+   "name": "Saudabad Police Station",
+   "latitude": 24.88481,
+   "longitude": 67.18419,
+   "location_label": "Fatima Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4764643870"
+  },
+  {
+   "code": "KHI-PS-036",
+   "name": "Airport Police Station",
+   "latitude": 24.88718,
+   "longitude": 67.14834,
+   "location_label": "Shahrah e Faisal",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4737620846"
+  },
+  {
+   "code": "KHI-PS-037",
+   "name": "Shahrah E Faisal Police Station",
+   "latitude": 24.88744,
+   "longitude": 67.12695,
+   "location_label": "Shahrah e Faisal",
+   "operator": "Sindh Police",
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857325"
+  },
+  {
+   "code": "KHI-PS-038",
+   "name": "New Town Police Station",
+   "latitude": 24.88881,
+   "longitude": 67.06047,
+   "location_label": "Stadium Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4734266941"
+  },
+  {
+   "code": "KHI-PS-039",
+   "name": "PIB Police Station",
+   "latitude": 24.89182,
+   "longitude": 67.04984,
+   "location_label": "Martin Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785775161"
+  },
+  {
+   "code": "KHI-PS-040",
+   "name": "Gulbahar Police Station",
+   "latitude": 24.89372,
+   "longitude": 67.03187,
+   "location_label": "Nawab Siddique Ali Khan Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857338"
+  },
+  {
+   "code": "KHI-PS-041",
+   "name": "Aziz Bhatti Police Station",
+   "latitude": 24.89874,
+   "longitude": 67.07662,
+   "location_label": "Sir Shah Muhammad Suleman Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718486"
+  },
+  {
+   "code": "KHI-PS-042",
+   "name": "Super Market Police Station",
+   "latitude": 24.90109,
+   "longitude": 67.03709,
+   "location_label": "Block 1 Liaquatabad Town, Karachi, Karachi City, Sindh 74600, Pakistan",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/12154048119"
+  },
+  {
+   "code": "KHI-PS-043",
+   "name": "Khokrapar Police Station",
+   "latitude": 24.90228,
+   "longitude": 67.21495,
+   "location_label": "Liaqat Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857322"
+  },
+  {
+   "code": "KHI-PS-044",
+   "name": "AL FALAH Police Station",
+   "latitude": 24.90282,
+   "longitude": 67.19754,
+   "location_label": "Begum Khursheed Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857323"
+  },
+  {
+   "code": "KHI-PS-045",
+   "name": "Baldia Police Station",
+   "latitude": 24.90374,
+   "longitude": 66.96729,
+   "location_label": "Hub Chowki Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5336782553"
+  },
+  {
+   "code": "KHI-PS-046",
+   "name": "Rizvia Police Station",
+   "latitude": 24.90604,
+   "longitude": 67.02789,
+   "location_label": "Nazimabad 1",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785884157"
+  },
+  {
+   "code": "KHI-PS-047",
+   "name": "SITE Police Station",
+   "latitude": 24.90683,
+   "longitude": 66.99687,
+   "location_label": "Fakhruddin Valika Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785775169"
+  },
+  {
+   "code": "KHI-PS-048",
+   "name": "Nazimabad Police Station",
+   "latitude": 24.91111,
+   "longitude": 67.03342,
+   "location_label": ", Nazimabad No. 4 Block 4 Nazimabad, Karachi,",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/12160084943"
+  },
+  {
+   "code": "KHI-PS-049",
+   "name": "Sharifabad Police Station",
+   "latitude": 24.91307,
+   "longitude": 67.054,
+   "location_label": "F B Area Blk 1",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:way/529948039"
+  },
+  {
+   "code": "KHI-PS-050",
+   "name": "Azizabad Police Station",
+   "latitude": 24.91653,
+   "longitude": 67.06293,
+   "location_label": "Hussainabad Street",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857329"
+  },
+  {
+   "code": "KHI-PS-051",
+   "name": "Saeedabad Police Station",
+   "latitude": 24.92069,
+   "longitude": 66.94723,
+   "location_label": "Hub Chowki Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5119465022"
+  },
+  {
+   "code": "KHI-PS-052",
+   "name": "Gulshan Police Station",
+   "latitude": 24.92555,
+   "longitude": 67.09457,
+   "location_label": "Allama Shabbir Ahmed Usmani Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4809964498"
+  },
+  {
+   "code": "KHI-PS-053",
+   "name": "Mochko Police Station",
+   "latitude": 24.92961,
+   "longitude": 66.94148,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:way/1304172655"
+  },
+  {
+   "code": "KHI-PS-054",
+   "name": "Joharabad Police Station",
+   "latitude": 24.9301,
+   "longitude": 67.07333,
+   "location_label": "Shah Jahan Avenue",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785866893"
+  },
+  {
+   "code": "KHI-PS-055",
+   "name": "North Nazimabad Police Station",
+   "latitude": 24.93203,
+   "longitude": 67.04784,
+   "location_label": "Wimbeldon Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718476"
+  },
+  {
+   "code": "KHI-PS-056",
+   "name": "Mominabad Police Station",
+   "latitude": 24.93327,
+   "longitude": 66.99777,
+   "location_label": "Badar Chowk Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718477"
+  },
+  {
+   "code": "KHI-PS-057",
+   "name": "Gulberg Police Station",
+   "latitude": 24.93551,
+   "longitude": 67.06618,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:way/364342863"
+  },
+  {
+   "code": "KHI-PS-058",
+   "name": "Malir Cantt Police Station",
+   "latitude": 24.93725,
+   "longitude": 67.20691,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4767610977"
+  },
+  {
+   "code": "KHI-PS-059",
+   "name": "Hydri Police Station",
+   "latitude": 24.93757,
+   "longitude": 67.04085,
+   "location_label": "Yasin Malik Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4738187736"
+  },
+  {
+   "code": "KHI-PS-060",
+   "name": "Taimuria Police Station",
+   "latitude": 24.93783,
+   "longitude": 67.05638,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4166731920"
+  },
+  {
+   "code": "KHI-PS-061",
+   "name": "Orangi Town Police Station",
+   "latitude": 24.93841,
+   "longitude": 67.00573,
+   "location_label": "Dr Adeeb Rizvi Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785884160"
+  },
+  {
+   "code": "KHI-PS-062",
+   "name": "Mobina Town Police Station",
+   "latitude": 24.93903,
+   "longitude": 67.10075,
+   "location_label": "Abul Hasan Isphani Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718489"
+  },
+  {
+   "code": "KHI-PS-063",
+   "name": "Sachal Police Station",
+   "latitude": 24.94036,
+   "longitude": 67.15653,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/3953103757"
+  },
+  {
+   "code": "KHI-PS-064",
+   "name": "Shahrah E Noor Jahan Police Station",
+   "latitude": 24.94244,
+   "longitude": 67.03518,
+   "location_label": "Shahrah Noor Jahan",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4336539539"
+  },
+  {
+   "code": "KHI-PS-065",
+   "name": "Saeedabad Police Station",
+   "latitude": 24.94894,
+   "longitude": 66.93096,
+   "location_label": "Hub Chowki Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5234606707"
+  },
+  {
+   "code": "KHI-PS-066",
+   "name": "Gulzar-e-Hijri Police Station",
+   "latitude": 24.94978,
+   "longitude": 67.10565,
+   "location_label": "Hijri Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718490"
+  },
+  {
+   "code": "KHI-PS-067",
+   "name": "Gabol Town Police Station",
+   "latitude": 24.96626,
+   "longitude": 67.08746,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785866891"
+  },
+  {
+   "code": "KHI-PS-068",
+   "name": "Sir Syed Town Police Station",
+   "latitude": 24.96809,
+   "longitude": 67.06229,
+   "location_label": "Shahrah Sher Shah Suri",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785866890"
+  },
+  {
+   "code": "KHI-PS-069",
+   "name": "New Karachi Police Station",
+   "latitude": 24.97909,
+   "longitude": 67.07022,
+   "location_label": "Godhra Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718475"
+  },
+  {
+   "code": "KHI-PS-070",
+   "name": "Pakistan Bazar Police Station",
+   "latitude": 24.98239,
+   "longitude": 66.99322,
+   "location_label": "Karachi",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5100535619"
+  },
+  {
+   "code": "KHI-PS-071",
+   "name": "Manghopir Police Station",
+   "latitude": 24.98474,
+   "longitude": 67.03868,
+   "location_label": "Manghopir Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785857327"
+  },
+  {
+   "code": "KHI-PS-072",
+   "name": "Gadap Police Station - Super Highway",
+   "latitude": 24.98481,
+   "longitude": 67.21589,
+   "location_label": "Super Highway",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/5133037351"
+  },
+  {
+   "code": "KHI-PS-073",
+   "name": "Ajmer Nagri Police Station",
+   "latitude": 24.9856,
+   "longitude": 67.05301,
+   "location_label": "Shahrah Noor Jahan",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718491"
+  },
+  {
+   "code": "KHI-PS-074",
+   "name": "Bilal Colony Police Station",
+   "latitude": 24.992,
+   "longitude": 67.07239,
+   "location_label": "Service Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785866892"
+  },
+  {
+   "code": "KHI-PS-075",
+   "name": "Surjani Town Police Station",
+   "latitude": 25.021,
+   "longitude": 67.06379,
+   "location_label": "Khwaja Shamsuudin Azeemi Road",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4785718493"
+  },
+  {
+   "code": "KHI-PS-076",
+   "name": "Gulshan E Maymar Police Station",
+   "latitude": 25.03198,
+   "longitude": 67.14287,
+   "location_label": "Sector Q",
+   "operator": null,
+   "facility_type": "police_station",
+   "source_ref": "osm:node/4741607552"
+  }
+ ],
+ "ambulance_stations": [
+  {
+   "code": "KHI-AMB-001",
+   "name": "Korangi Station 3 Aman Ambulance Service",
+   "latitude": 24.82086,
+   "longitude": 67.1219,
+   "location_label": "Landhi",
+   "operator": "Aman Foundation (Aman Ambulance) (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5132942498"
+  },
+  {
+   "code": "KHI-AMB-002",
+   "name": "Chhipa Ambulance",
+   "latitude": 24.83688,
+   "longitude": 67.22584,
+   "location_label": "Mehran Highway",
+   "operator": "Chhipa Welfare Association (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5103467659"
+  },
+  {
+   "code": "KHI-AMB-003",
+   "name": "Edhi Ambulance",
+   "latitude": 24.8376,
+   "longitude": 67.22529,
+   "location_label": "Landhi",
+   "operator": "Edhi Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5103467658"
+  },
+  {
+   "code": "KHI-AMB-004",
+   "name": "Maqsood Trust Ambulance Parking",
+   "latitude": 24.84697,
+   "longitude": 67.06756,
+   "location_label": "Karachi",
+   "operator": "Maqsood Welfare Trust (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5936470556"
+  },
+  {
+   "code": "KHI-AMB-005",
+   "name": "Edhi Trust",
+   "latitude": 24.84841,
+   "longitude": 66.99544,
+   "location_label": "Ghulam Ali Allana Road",
+   "operator": "Edhi Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5142802058"
+  },
+  {
+   "code": "KHI-AMB-006",
+   "name": "I.S.M HOSPIAL AMBULANCE SERVICE",
+   "latitude": 24.86652,
+   "longitude": 67.02372,
+   "location_label": "East, Garden Rd, near I.B.A, Preedy Quarters",
+   "operator": null,
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/12191285744"
+  },
+  {
+   "code": "KHI-AMB-007",
+   "name": "Chhipa Community Centre",
+   "latitude": 24.87476,
+   "longitude": 67.02602,
+   "location_label": "Near Agha Khan Gymkhana, Soldier Bazaar,",
+   "operator": "Chhipa Welfare Association (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5143008184"
+  },
+  {
+   "code": "KHI-AMB-008",
+   "name": "Edhi Star Gate Centre",
+   "latitude": 24.88715,
+   "longitude": 67.15452,
+   "location_label": "Shahrah e Faisal",
+   "operator": "Edhi Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5226556633"
+  },
+  {
+   "code": "KHI-AMB-009",
+   "name": "Malir Station 1 Aman Ambulance Service",
+   "latitude": 24.89318,
+   "longitude": 67.17772,
+   "location_label": "Street No 1",
+   "operator": "Aman Foundation (Aman Ambulance) (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/4764379358"
+  },
+  {
+   "code": "KHI-AMB-010",
+   "name": "Edhi Centre",
+   "latitude": 24.89794,
+   "longitude": 67.06826,
+   "location_label": "University Road",
+   "operator": "Edhi Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/4793640274"
+  },
+  {
+   "code": "KHI-AMB-011",
+   "name": "Chhipa Welfare",
+   "latitude": 24.91707,
+   "longitude": 67.09673,
+   "location_label": "University Road",
+   "operator": "Chhipa Welfare Association (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5115540197"
+  },
+  {
+   "code": "KHI-AMB-012",
+   "name": "Edhi Ambulance Booth",
+   "latitude": 24.91826,
+   "longitude": 67.03169,
+   "location_label": "Nazimabad No. 4 Block 3 Nazimabad, Karachi, Karachi City, Sindh 74600, Pakistan",
+   "operator": "Edhi Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/12184222966"
+  },
+  {
+   "code": "KHI-AMB-013",
+   "name": "Chhipa Ambulance Booth",
+   "latitude": 24.92414,
+   "longitude": 67.09147,
+   "location_label": "W3FR+JHW, Block 5 Gulshan-e-Iqbal",
+   "operator": "Chhipa Welfare Association (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/12279193293"
+  },
+  {
+   "code": "KHI-AMB-014",
+   "name": "Edhi Ambulance",
+   "latitude": 24.927,
+   "longitude": 67.20362,
+   "location_label": "Mallir Cantt Road",
+   "operator": "Edhi Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/4767647546"
+  },
+  {
+   "code": "KHI-AMB-015",
+   "name": "Khidmat-e-khalq Foundation Ambulance Office",
+   "latitude": 24.92852,
+   "longitude": 67.07105,
+   "location_label": "W3HC+CC7, Federal B Area Naseerabad Block 14 Gulberg Town",
+   "operator": "Khidmat-e-Khalq Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/12160483902"
+  },
+  {
+   "code": "KHI-AMB-016",
+   "name": "JDC Ambulance Service",
+   "latitude": 24.94383,
+   "longitude": 67.08286,
+   "location_label": "Shahrah-e-Pakistan",
+   "operator": "JDC Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5109616908"
+  },
+  {
+   "code": "KHI-AMB-017",
+   "name": "SIEHS-1122 North Nazimabad Station (7)",
+   "latitude": 24.94395,
+   "longitude": 67.03649,
+   "location_label": "C, 8, Block R North Nazimabad Town",
+   "operator": "Sindh Integrated Emergency & Health Services (SIEHS 1122) (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/12227788485"
+  },
+  {
+   "code": "KHI-AMB-018",
+   "name": "Edhi Welfare Centre",
+   "latitude": 24.94655,
+   "longitude": 67.08276,
+   "location_label": "Rashid Minhas Road",
+   "operator": "Edhi Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5117510219"
+  },
+  {
+   "code": "KHI-AMB-019",
+   "name": "Edhi Center",
+   "latitude": 24.95149,
+   "longitude": 67.00237,
+   "location_label": "Shahrah e Qaddafi",
+   "operator": "Edhi Foundation (per OSM name)",
+   "facility_type": "ambulance_station",
+   "source_ref": "osm:node/5158915969"
+  }
+ ]
+}

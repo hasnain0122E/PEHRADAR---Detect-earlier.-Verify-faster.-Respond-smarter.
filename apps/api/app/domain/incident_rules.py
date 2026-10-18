@@ -32,7 +32,14 @@ FACILITY_TYPES = (
     "rescue_station",
     "institutional_fire_response",
     "fire_station_unclassified",
+    # M6C multi-agency response facilities.
+    "police_station",
+    "ambulance_station",
 )
+# M6C: the three response categories. One table holds all of them (fire_station, see Schema.md).
+FACILITY_CATEGORIES = ("fire", "police", "ambulance")
+# Units suggested for every confirmed incident, in display order.
+RESPONSE_UNITS = ("fire", "ambulance", "police")
 SCENARIO_RUN_STATUSES = ("scheduled", "running", "detected", "not_detected", "failed", "cancelled")
 DETECTION_EVENT_TYPES = ("fire", "smoke", "fire_smoke")
 REVIEW_STATUSES = ("pending", "confirmed", "rejected")
@@ -54,6 +61,8 @@ TIMELINE_EVENT_TYPES = (
     "route_generated",
     "route_unavailable",
     "detection_merged",
+    "resource_selected",
+    "no_resource_available",
     "status_changed",
     "resolved",
     "rejected",

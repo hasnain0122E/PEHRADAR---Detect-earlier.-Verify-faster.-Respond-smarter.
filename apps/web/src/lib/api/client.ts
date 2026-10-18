@@ -255,8 +255,9 @@ export function createOpsApi(config: OpsApiConfig): OpsApi {
   return {
     listCameras: async (signal) =>
       items<Camera>(await requestJson("/api/v1/cameras", read, signal), "Cameras"),
+    // M6C: every response facility (fire, police, ambulance); `category` tells them apart.
     listStations: async (signal) =>
-      items<FireStation>(await requestJson("/api/v1/fire-stations", read, signal), "Stations"),
+      items<FireStation>(await requestJson("/api/v1/response-facilities", read, signal), "Stations"),
     listIncidents: async (signal) =>
       items<Incident>(await requestJson("/api/v1/incidents", read, signal), "Incidents"),
     getIncident: async (id, signal) =>

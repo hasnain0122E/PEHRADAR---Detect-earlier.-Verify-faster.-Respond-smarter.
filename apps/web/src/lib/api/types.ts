@@ -21,7 +21,13 @@ export type FacilityType =
   | "industrial_fire_station"
   | "rescue_station"
   | "institutional_fire_response"
-  | "fire_station_unclassified";
+  | "fire_station_unclassified"
+  | "police_station"
+  | "ambulance_station";
+/** M6C: the service a response facility belongs to. */
+export type FacilityCategory = "fire" | "police" | "ambulance";
+/** Suggested response units per incident, in display order. */
+export type ResponseUnitKind = "fire" | "ambulance" | "police";
 export type StationStatus = "available" | "unavailable";
 export type ReviewStatus = "pending" | "confirmed" | "rejected";
 export type IncidentStatus =
@@ -40,6 +46,8 @@ export type TimelineEventType =
   | "route_generated"
   | "route_unavailable"
   | "detection_merged"
+  | "resource_selected"
+  | "no_resource_available"
   | "status_changed"
   | "resolved"
   | "rejected";
@@ -100,6 +108,8 @@ export interface FireStation {
   verification_status: "unverified" | "verified";
   operator: string | null;
   facility_type: FacilityType;
+  /** M6C. Older API versions omit it (fire only). */
+  category?: FacilityCategory;
   availability_is_demo: boolean;
   created_at: string | null;
 }
@@ -186,9 +196,21 @@ export interface Incident {
   resolved_at: string | null;
   /** Suggested response route; lists omit `geometry`. */
   route: IncidentRoute | null;
+  /** M6C: suggested fire, ambulance and police resources (null when none was selected). */
+  response_units?: Record<ResponseUnitKind, ResponseUnit | null>;
   is_simulated: boolean;
   created_at: string | null;
   updated_at: string | null;
+}
+
+/** One suggested response resource: the facility, its straight-line distance and road route. */
+export interface ResponseUnit {
+  unit: ResponseUnitKind;
+  facility: FireStation;
+  distance_km: number;
+  method: string;
+  reason: string | null;
+  route: IncidentRoute | null;
 }
 
 export type IncidentRoute =

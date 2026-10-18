@@ -15,7 +15,13 @@ from app.config import Settings
 from app.db import DbSession
 from app.models import Camera, DetectionEvent, FireStation, Incident
 from app.routers.security import operator_error
-from app.routers.serializers import camera_json, detection_json, incident_json, station_json
+from app.routers.serializers import (
+    camera_json,
+    detection_json,
+    incident_json,
+    response_facility_ids,
+    station_json,
+)
 from app.routers.uploads import error_response
 from app.routing import RouteProvider
 from app.services import operations
@@ -69,11 +75,21 @@ def _incident_detail(session: Session, incident_id: str) -> Incident | None:
     )
 
 
+def _facilities(session: Session, incidents: list[Incident]) -> dict[str, FireStation]:
+    ids = response_facility_ids(incidents)
+    if not ids:
+        return {}
+    return {f.id: f for f in session.scalars(select(FireStation).where(FireStation.id.in_(ids)))}
+
+
 def _incident_response(session: Session, incident_id: str) -> dict:
     incident = _incident_detail(session, incident_id)
     with_evidence = _has_evidence(session, [incident.detection_event_id])
     return incident_json(
-        incident, detail=True, has_evidence=incident.detection_event_id in with_evidence
+        incident,
+        detail=True,
+        has_evidence=incident.detection_event_id in with_evidence,
+        facilities=_facilities(session, [incident]),
     )
 
 
@@ -122,8 +138,21 @@ def build_router(settings: Settings, route_provider: RouteProvider | None = None
 
     @router.get("/fire-stations")
     def list_stations(session: DbSession):
-        stations = session.scalars(select(FireStation).order_by(FireStation.code))
+        # Fire only, as before M6C; police and ambulance are under /response-facilities.
+        stations = session.scalars(
+            select(FireStation).where(FireStation.category == "fire").order_by(FireStation.code)
+        )
         return {"items": [station_json(s) for s in stations]}
+
+    @router.get("/response-facilities")
+    def list_response_facilities(
+        session: DbSession, category: Literal["fire", "police", "ambulance"] | None = None
+    ):
+        """M6C: fire, police and ambulance facilities (one list; filter with ?category=)."""
+        query = select(FireStation).order_by(FireStation.category, FireStation.code)
+        if category:
+            query = query.where(FireStation.category == category)
+        return {"items": [station_json(s) for s in session.scalars(query)]}
 
     @router.get("/fire-stations/{station_id}")
     def get_station(session: DbSession, station_id: str):
@@ -221,9 +250,15 @@ def build_router(settings: Settings, route_provider: RouteProvider | None = None
             query = query.where(Incident.event_type == event_type)
         incidents = session.scalars(query).all()
         with_evidence = _has_evidence(session, [i.detection_event_id for i in incidents])
+        facilities = _facilities(session, incidents)
         return {
             "items": [
-                incident_json(i, detail=False, has_evidence=i.detection_event_id in with_evidence)
+                incident_json(
+                    i,
+                    detail=False,
+                    has_evidence=i.detection_event_id in with_evidence,
+                    facilities=facilities,
+                )
                 for i in incidents
             ]
         }

@@ -1,4 +1,5 @@
-"""Idempotent Karachi seed: the M5 monitoring network (cameras by provenance) + fire stations.
+"""Idempotent Karachi seed: the M5 monitoring network (cameras by provenance), fire stations and
+(M6C) police and ambulance stations.
 
 Run:  uv run python -m app.seed   (after `alembic upgrade head`)
 
@@ -19,6 +20,7 @@ from app.db import make_engine, make_sessionmaker
 from app.models import Camera, FireStation
 
 SEED_FILE = Path(__file__).resolve().parents[1] / "seed" / "karachi_network.json"
+FACILITY_FILE = Path(__file__).resolve().parents[1] / "seed" / "karachi_response_facilities.json"
 MEDIA_PATH = "/api/v1/media/"
 NAMESPACE = uuid.UUID("6f1d3c52-6a8e-4c43-9a43-2d8f3f5b8c11")  # fixed: PehRadar seed namespace
 
@@ -27,9 +29,12 @@ def seed_id(code: str) -> str:
     return str(uuid.uuid5(NAMESPACE, code))
 
 
-def seed(session: Session, data: dict | None = None) -> dict[str, int]:
+def seed(
+    session: Session, data: dict | None = None, facilities: dict | None = None
+) -> dict[str, int]:
     data = data or json.loads(SEED_FILE.read_text(encoding="utf-8"))
-    created = {"cameras": 0, "fire_stations": 0}
+    facilities = facilities or json.loads(FACILITY_FILE.read_text(encoding="utf-8"))
+    created = {"cameras": 0, "fire_stations": 0, "police_stations": 0, "ambulance_stations": 0}
     for row in data["cameras"]:
         camera = session.get(Camera, seed_id(row["code"]))
         if camera is None:
@@ -60,12 +65,16 @@ def seed(session: Session, data: dict | None = None) -> dict[str, int]:
         camera.is_simulated = camera.source_type in ("simulated_coverage", "demo_stream")
         # M6B: provenance of the Pakistan-based demo footage (seed/feed_library.json).
         camera.feed_meta = row.get("feed") if camera.source_type == "demo_stream" else None
-    for row in data["fire_stations"]:
+    rows = [("fire", "fire_stations", row) for row in data["fire_stations"]]
+    rows += [("police", "police_stations", row) for row in facilities["police_stations"]]
+    rows += [("ambulance", "ambulance_stations", row) for row in facilities["ambulance_stations"]]
+    for category, counter, row in rows:
         station = session.get(FireStation, seed_id(row["code"]))
         if station is None:
             station = FireStation(id=seed_id(row["code"]), status="available")
             session.add(station)
-            created["fire_stations"] += 1
+            created[counter] += 1
+        station.category = category
         station.code, station.name = row["code"], row["name"]
         station.latitude, station.longitude = row["latitude"], row["longitude"]
         station.location_label = row["location_label"]
@@ -86,7 +95,9 @@ def main() -> None:
         created = seed(session)
     engine.dispose()
     print(
-        f"Seed complete: created {created['cameras']} cameras, {created['fire_stations']} stations"
+        f"Seed complete: created {created['cameras']} cameras, {created['fire_stations']} fire, "
+        f"{created['police_stations']} police and {created['ambulance_stations']} ambulance "
+        "stations"
     )
 
 

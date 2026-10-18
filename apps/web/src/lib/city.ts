@@ -36,6 +36,8 @@ export const FACILITY_LABEL: Record<FacilityType, string> = {
   rescue_station: "Rescue station",
   institutional_fire_response: "Institutional fire response",
   fire_station_unclassified: "Fire station (type not recorded)",
+  police_station: "Police station",
+  ambulance_station: "Ambulance station",
 };
 
 export const hasFeed = (c: Camera) => c.stream_type !== "none" && !!c.stream_url;

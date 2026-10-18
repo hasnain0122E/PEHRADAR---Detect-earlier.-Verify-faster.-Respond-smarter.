@@ -26,7 +26,7 @@ function StubMap(props: OpsMapProps) {
   return (
     <div
       data-testid="stub-map"
-      data-route={JSON.stringify(props.route ?? null)}
+      data-route={JSON.stringify(props.routes ?? null)}
       data-focus={props.focus?.key ?? ""}
       data-view={props.view}
     >
@@ -197,8 +197,9 @@ describe("CommandCenter", () => {
     expect(await screen.findByText(/Incident created. Landhi Fire Station suggested. No dispatch was sent./)).toBeInTheDocument();
     expect(details().getByText("Fire incident")).toBeInTheDocument();
     expect(details().getByText("Landhi Fire Station")).toBeInTheDocument();
-    expect(screen.getByText("Candidate station based on geographic proximity. Not a dispatch confirmation.")).toBeInTheDocument();
-    expect(details().getAllByText("Station selected").length).toBe(2); // status chip + timeline
+    expect(screen.getByText("Suggested response resources based on mapped proximity and routing estimates. This does not confirm real-world availability or dispatch.")).toBeInTheDocument();
+    expect(details().getByText("Station selected")).toBeInTheDocument(); // status chip
+    expect(details().getByText("Fire station selected")).toBeInTheDocument(); // timeline
     await waitFor(() => expect(api.listIncidents).toHaveBeenCalledTimes(2)); // refreshed after the action
   });
 
@@ -233,24 +234,25 @@ describe("CommandCenter", () => {
 
     expect(await screen.findByText(/already reviewed, possibly from another console/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open the incident" }));
-    expect(await screen.findByText("Response facility")).toBeInTheDocument();
+    expect(await screen.findByText("Suggested response")).toBeInTheDocument();
   });
 
   it("selecting an incident shows its detail and timeline", async () => {
     const api = fakeApi({ listIncidents: vi.fn().mockResolvedValue([INCIDENT]) });
     renderCenter(api);
     const list = await openList("Incidents");
-    fireEvent.click(await list.findByRole("button", { name: /Candidate: Landhi Fire Station/ }));
+    fireEvent.click(await list.findByRole("button", { name: /Suggested: Landhi Fire Station/ }));
 
     expect(await details().findByText("Timeline")).toBeInTheDocument();
     expect(api.getIncident).toHaveBeenCalledWith(INCIDENT.id, expect.anything());
-    for (const label of ["Detected", "Confirmed", "Station selected"]) {
+    for (const label of ["Detected", "Confirmed", "Fire station selected"]) {
       expect(details().getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(screen.queryByText("Notified")).not.toBeInTheDocument(); // only states that happened
-    expect(screen.getByText(/straight-line distance \(not a driving route or ETA\)/)).toBeInTheDocument();
+    // An incident without a stored road route shows the straight-line fallback for that unit.
+    expect(screen.getByText(/Road route unavailable; [\d.]+ km straight-line/)).toBeInTheDocument();
     const map = screen.getByTestId("stub-map");
-    expect(within(map).getByLabelText(/Landhi.*candidate station/).dataset.classes).toContain("is-candidate");
+    expect(within(map).getByLabelText(/Landhi.*suggested fire resource/).dataset.classes).toContain("is-candidate");
   });
 
   it("shows an error state with retry when operational data cannot load", async () => {
@@ -366,16 +368,18 @@ describe("CommandCenter (M5 automated monitoring)", () => {
     fireEvent.click(await details().findByRole("button", { name: "Confirm incident" }));
     fireEvent.click(details().getByRole("button", { name: "Yes, confirm incident" }));
 
-    expect(await details().findByText("Road distance")).toBeInTheDocument();
+    expect(await details().findByText("Suggested response")).toBeInTheDocument();
     expect(details().getByText("9.1 km")).toBeInTheDocument();
     expect(details().getByText("11 min")).toBeInTheDocument();
-    expect(details().getByText("Suggested response route. Estimate only — not a dispatch confirmation.")).toBeInTheDocument();
+    expect(details().getByText("Suggested response resources based on mapped proximity and routing estimates. This does not confirm real-world availability or dispatch.")).toBeInTheDocument();
     expect(details().queryByText(/dispatched/i)).toBeNull();
     expect(JSON.parse(screen.getByTestId("stub-map").dataset.route!)).toBeNull(); // not until asked
 
     fireEvent.click(details().getByRole("button", { name: "Show route" }));
     await waitFor(() =>
-      expect(JSON.parse(screen.getByTestId("stub-map").dataset.route!)).toEqual(ROUTE_OK.geometry!.coordinates),
+      expect(JSON.parse(screen.getByTestId("stub-map").dataset.route!)).toEqual([
+        { unit: "fire", color: "#E5484D", coordinates: ROUTE_OK.geometry!.coordinates },
+      ]),
     );
     const summary = within(screen.getByLabelText("Route summary"));
     expect(summary.getByText("Landhi Fire Station")).toBeInTheDocument();

@@ -490,7 +490,7 @@ This section describes what is built. Where it differs from §7 (written in M0),
 ### 14.1 Monitoring network and provenance
 - `seed/karachi_network.json` is generated offline by `seed/build_karachi_network.py` from three Overpass exports (queries in the script header): major roads, `amenity/emergency=fire_station`, and `man_made=surveillance`. The generator is deterministic: no randomness, no runtime Overpass calls.
 - **Simulated coverage placement:** each zone has an anchor, a radius and a node count. Nodes are chosen from vertices of named motorway/trunk/primary/secondary roads inside the zone by farthest-point sampling from the vertex nearest the anchor, with ≥ 0.45 km between any two nodes. Road vertices are never in water or parks.
-- **Stations:** 11 hand-reviewed OSM elements. Excluded: two businesses mis-tagged as fire stations, one duplicate node about 50 m from another, one unnamed duplicate way, and an ambulance station. `facility_type` is inferred from the OSM name/operator.
+- **Stations:** 11 hand-reviewed OSM elements. Excluded: two businesses mis-tagged as fire stations, one duplicate node about 50 m from another, one unnamed duplicate way, and an ambulance station (M6C adds ambulance stations as their own category, §15). `facility_type` is inferred from the OSM name/operator.
 - **Surveillance:** of 3 OSM `man_made=surveillance` features, two are CCTV shops/companies and were excluded; one plain camera point is `verified_mapped`.
 - The 8 M3 cameras keep their codes and UUIDs; three became `demo_stream` nodes.
 - The API serializes `monitoring_status` from what PehRadar actually does: `monitoring` (demo/public feed), `simulated`, `not_connected` (mapped location only), `offline`, `maintenance`.
@@ -540,3 +540,32 @@ This section describes what is built. Where it differs from §7 (written in M0),
 | GET | `/api/v1/media/{name}` | public (licensed demo clips only) |
 
 Camera, station and incident JSON gained the fields in `Schema.md` §4A.
+
+## 15. M6C implementation: multi-agency response (2026-10-18)
+
+### 15.1 Data and provenance
+- One facility table (`fire_station`, name kept for compatibility) now holds fire, police and ambulance facilities, told apart by `category` (Schema §4C).
+- `seed/build_response_facilities.py` curates two raw Overpass exports (queries in its docstring) into `seed/karachi_response_facilities.json`; the seed loads it idempotently (UUIDv5 ids from codes, status toggles preserved).
+- **Police (76):** named `amenity=police` features whose name says "Police Station"/thana. Excluded: 50 offices, posts, traffic sections, lines and unnamed/generic features; 8 traffic, anti-narcotics, special-branch, naval, motorway (NHMP), crime-unit and Hub (Balochistan) features; 12 duplicates (same name within 3 km, one name containing the other within 1 km, or within 120 m). Two same-named pairs further apart (Saeedabad, SITE) are kept: they cannot be confirmed as duplicates.
+- **Ambulance (19):** named features explicitly tagged `emergency=ambulance_station` (Edhi, Chhipa, Aman, JDC, SIEHS-1122, Khidmat-e-Khalq, Maqsood Trust and others); 1 same-brand duplicate within 150 m removed. Hospitals are not counted: OSM rarely records whether a hospital runs ambulances.
+- **Fire (11):** unchanged M5 dataset.
+
+### 15.2 Selection
+`operations.confirm_detection` selects the fire station (unchanged, now filtered to `category = fire`), then `_select_units` selects the nearest `available` ambulance and police facility with the same Haversine rule (`nearest_available_station`). Each choice stores facility id, straight-line distance, method and reason in `incident.response_units`. Merged detections (M6B) keep the incident's original units.
+
+### 15.3 Routing
+`operations.attach_route` runs after the confirmation commits and routes each unit with the existing `RouteProvider` (OSRM): fire first, then ambulance and police, sequentially (public OSRM allows about 1 request/s). Every unit is wrapped on its own: a `RoutingError` or any unexpected provider error gives that unit a straight-line fallback and never affects the others. Confirm-to-panel took 2.7–3.7 s locally with three live OSRM requests.
+
+### 15.4 API
+- `GET /api/v1/response-facilities[?category=fire|police|ambulance]` lists all facilities (`category` on every facility). `GET /fire-stations` stays fire-only for older clients.
+- Incident list and detail add `response_units: {fire, ambulance, police}`, each `{unit, facility, distance_km, method, reason, route}` or null. Lists omit route geometry. The M5 fields `station_selection`, `assigned_station_id` and `route` are unchanged (fire).
+- `POST /fire-stations/{id}/status` toggles the demo availability of any facility.
+- Demo reset (`scope: demo`) now also restores node and facility demo statuses.
+
+### 15.5 Web
+- `lib/response.ts` holds the unit vocabulary: labels, icons and the fixed route colours fire `#E5484D`, ambulance `#16A36A`, police `#2563EB`.
+- Incident drawer: "Suggested response" with one row per unit (icon, service colour, road km and ETA or a straight-line fallback), "Show all routes", per-unit route toggles, and the required disclaimer.
+- Map: each suggested route in its colour; the incident, the three suggested facilities and the routes are framed together; unrelated cameras and facilities fade. Fire stations are HTML markers; quiet police and ambulance facilities are a GL point layer shown from zoom 11.5 to avoid city-zoom clutter; suggested units become labelled HTML markers filled with their colour. Layers menu: Fire / Ambulance / Police toggles.
+
+### 15.6 Limitations
+Mapped, unverified locations; demo availability only; free-flow road estimates; the nearest facility by straight line is not always the fastest by road; no dispatch or notification integration of any kind.
