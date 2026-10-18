@@ -6,7 +6,7 @@ import "server-only";
  * The browser posts to /api/operator/<path> on this web app. This module forwards the request
  * to the PehRadar API and adds `X-Operator-Key` from the server-only OPERATOR_API_KEY env var,
  * so the key never reaches browser JavaScript. Only the write calls the command center needs
- * are forwarded (M4 review + upload, M5 demo scenarios); anything else is 404.
+ * are forwarded (M4 review + upload, M5 demo scenarios, M6B demo simulation); anything else is 404.
  */
 
 const ALLOWED_PATHS = [
@@ -14,6 +14,9 @@ const ALLOWED_PATHS = [
   /^detections\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/(confirm|reject)$/,
   /^scenarios\/[a-z0-9-]{1,60}\/start$/,
   /^scenarios\/reset$/,
+  // M6B demo network simulation: node online/offline and station availability flags.
+  /^cameras\/status$/,
+  /^fire-stations\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/status$/,
 ];
 
 /** Vercel Functions accept request bodies up to 4.5 MB; stay under it with multipart overhead. */

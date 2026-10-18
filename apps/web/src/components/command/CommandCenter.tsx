@@ -3,9 +3,10 @@
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type { OpsApi } from "@/lib/api/client";
-import type { Camera, Detection, Incident, IncidentDetail, Scenario } from "@/lib/api/types";
+import type { Camera, Detection, Incident, IncidentDetail, ResetScope, Scenario } from "@/lib/api/types";
 import { buildActivity, cityStats, isLiveRun, type LocalEvent } from "@/lib/city";
 import { confidencePct, isActiveIncident } from "@/lib/ops";
+import { usePreferences, useResolvedTheme } from "@/lib/preferences";
 
 import { Icon } from "../icons";
 import { boundsOf, type MapFocus, type MapView, OpsMap, type OpsMapProps, prefersReducedMotion } from "../map/OpsMap";
@@ -18,7 +19,8 @@ import { etaMin, IncidentPanel, StationPanel } from "./IncidentPanel";
 import { ListPanel } from "./ListPanels";
 import { type NavView, NavRail } from "./NavRail";
 import type { Selection } from "./selection";
-import { ALL_ZONES, SettingsDialog, TopBar } from "./TopBar";
+import { SettingsDialog } from "./SettingsDialog";
+import { ALL_ZONES, TopBar } from "./TopBar";
 import { BUTTON_PRIMARY, BUTTON_SECONDARY, FOCUS, ICON_BUTTON, InlineError, Skeleton } from "./ui";
 import { useAlertSound } from "./useAlertSound";
 import { describeError, useOpsData } from "./useOpsData";
@@ -45,7 +47,7 @@ function scenarioOverride(scenarios: Scenario[], cameraId: string, mediaSrc: (u:
   if (!s || !run || run.status === "cancelled" || run.status === "scheduled") return null;
   const src = mediaSrc(run.video_url);
   return src
-    ? { src, note: `Scenario clip “${s.name}”: licensed sample footage on a simulated node. Not Karachi CCTV.` }
+    ? { src, note: `Scenario clip “${s.name}”: licensed footage analysed by the real detector on a simulated node. Not Karachi CCTV.` }
     : null;
 }
 
@@ -62,13 +64,15 @@ export interface CommandCenterProps {
 export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImpl }: CommandCenterProps) {
   const { state: health, recheck } = useApiHealth(apiBaseUrl, fetchImpl);
   const sound = useAlertSound();
+  const [prefs, setPrefs] = usePreferences();
+  const theme = useResolvedTheme(prefs.theme);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [nav, setNav] = useState<NavView>("monitor");
   const [demoOpen, setDemoOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const reducedMotion = useSyncExternalStore(noopSubscribe, prefersReducedMotion, () => false);
   const [viewChoice, setViewChoice] = useState<MapView | null>(null);
-  const view = viewChoice ?? (reducedMotion ? "2d" : "3d");
+  const view = viewChoice ?? (reducedMotion ? "2d" : prefs.defaultView);
   const [zone, setZone] = useState(ALL_ZONES);
   const [routeFor, setRouteFor] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisState | null>(null);
@@ -117,12 +121,16 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
         // Fly to the alert unless the operator is in the middle of another review or incident.
         const busy = selectionRef.current?.kind === "detection" || selectionRef.current?.kind === "incident";
         if (camera && !busy) setFocus({ key: d.id, lng: camera.longitude, lat: camera.latitude });
+        // Merge rule (M6B): the same camera and event as an open incident is a follow-up, not a new fire.
+        const followUp = incidents.some(
+          (i) => isActiveIncident(i) && i.camera.id === d.camera_id && i.event_type === d.event_type,
+        );
         raise({
           id: `d:${d.id}`,
           kind: "detection",
-          title: `Possible ${EVENT_WORD[d.event_type]} detected`,
+          title: followUp ? "Additional detection, same camera" : `Possible ${EVENT_WORD[d.event_type]} detected`,
           location: camera?.location_label ?? "Unknown camera",
-          detail: `AI confidence ${confidencePct(d.confidence)}`,
+          detail: `AI confidence ${confidencePct(d.confidence)}${followUp ? " · incident already open" : ""}`,
           select: { kind: "detection", id: d.id },
         });
       }
@@ -144,14 +152,46 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
 
   const { data, refresh } = useOpsData(api, onUpdate);
   // A finished scenario run may have stored a detection: load it now, not at the next poll.
-  const { scenarios, start: startScenario, reset: resetScenarioData } = useScenarios(api, () => void refresh());
-  // A reset closes scenario detections and incidents: show that at once, not at the next poll.
-  const resetScenarios = useCallback(async () => {
-    const result = await resetScenarioData();
-    await refresh();
-    setAlerts([]);
-    return result;
-  }, [resetScenarioData, refresh]);
+  const { scenarios, start: startScenarioRun, reset: resetScenarioData } = useScenarios(api, () => void refresh());
+  const startScenario = useCallback(
+    (id: string) => startScenarioRun(id, { delayS: prefs.scenarioDelayS }),
+    [startScenarioRun, prefs.scenarioDelayS],
+  );
+  // Reset operations: the server closes (or, for a full reset, deletes) the demo data; the console
+  // drops every piece of temporary state at once instead of waiting for the next poll.
+  const resetScenarios = useCallback(
+    async (scope: ResetScope = "demo") => {
+      const result = await resetScenarioData(scope);
+      setAlerts([]);
+      setRouteFor(null);
+      setNotice(null);
+      setAnalysis(null);
+      setConfirmed(null);
+      setIncidentDetail(null);
+      setDetections({});
+      setSelection((cur) => (cur?.kind === "detection" || cur?.kind === "incident" ? null : cur));
+      if (scope === "full") setLocalEvents([]);
+      await refresh({ statics: scope === "full" });
+      return result;
+    },
+    [resetScenarioData, refresh],
+  );
+
+  // Demo auto-start (Settings): arm the first fire scenario once per console session.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (autoStarted.current || !prefs.autoStart || scenarios.status !== "ready" || !scenarios.enabled) return;
+    autoStarted.current = true;
+    if (scenarios.items.some(isLiveRun)) return;
+    const first = scenarios.items.find((s) => s.expected_behavior === "fire_detected" && s.camera_id) ?? scenarios.items[0];
+    if (first) void startScenario(first.id).catch(() => undefined);
+  }, [prefs.autoStart, scenarios, startScenario]);
+
+  async function setNodes(status: "active" | "offline", district: string | null) {
+    const { cameras_changed } = await api.setCameraStatus(district ? { status, district } : { status });
+    await refresh({ statics: true });
+    return cameras_changed;
+  }
   useEffect(() => {
     camerasRef.current = data.cameras;
   }, [data.cameras]);
@@ -240,6 +280,8 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
 
   async function confirmDetection(d: Detection) {
     const incident = await api.confirmDetection(d.id);
+    // Merge rule: the API returns the open incident this detection joined.
+    const merged = incident.detection_event_id !== d.id;
     seen.current?.add(`i:${incident.id}`);
     setDetections((prev) => ({ ...prev, [d.id]: { ...d, review_status: "confirmed" } }));
     dismiss(`d:${d.id}`);
@@ -248,9 +290,11 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
     select({ kind: "incident", id: incident.id });
     setNotice({
       incidentId: incident.id,
-      text: incident.station_selection
-        ? `Incident created. ${incident.station_selection.station.name} suggested. No dispatch was sent.`
-        : "Incident created. No fire station is marked available in the demo data.",
+      text: merged
+        ? "Added to the open incident from this camera. No new incident was created."
+        : incident.station_selection
+          ? `Incident created. ${incident.station_selection.station.name} suggested. No dispatch was sent.`
+          : "Incident created. No fire station is marked available in the demo data.",
     });
     void refresh();
   }
@@ -353,6 +397,10 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
             feed={feedFor(camera)}
             lastActivity={lastActivityFor(camera.id)}
             scenarioNote={scenarioNoteFor(camera.id)}
+            onSetStatus={async (status) => {
+              await api.setCameraStatus({ status, camera_ids: [camera.id] });
+              await refresh({ statics: true });
+            }}
           />
         );
       }
@@ -400,7 +448,17 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
         );
       case "station": {
         const station = data.stations.find((s) => s.id === selection.id);
-        return station ? <StationPanel station={station} /> : <InlineError>Station not found.</InlineError>;
+        return station ? (
+          <StationPanel
+            station={station}
+            onSetStatus={async (status) => {
+              await api.setStationStatus(station.id, status);
+              await refresh({ statics: true });
+            }}
+          />
+        ) : (
+          <InlineError>Station not found.</InlineError>
+        );
       }
     }
   }
@@ -461,6 +519,9 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
               route={selectedRoute}
               focus={focus}
               view={view}
+              theme={theme}
+              showClosed={prefs.showResolved}
+              onShowClosed={(showResolved) => setPrefs({ showResolved })}
               onSelect={select}
             />
 
@@ -538,11 +599,23 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
           state={scenarios}
           onClose={() => setDemoOpen(false)}
           onStart={startScenario}
-          onReset={resetScenarios}
+          onReset={() => resetScenarios("demo")}
+          delayS={prefs.scenarioDelayS}
           onOpenCamera={(id) => select({ kind: "camera", id })}
         />
       )}
-      {settingsOpen && <SettingsDialog sound={sound} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsDialog
+          sound={sound}
+          prefs={prefs}
+          onPrefs={setPrefs}
+          zones={zones}
+          scenariosEnabled={scenarios.enabled}
+          onNodes={setNodes}
+          onReset={resetScenarios}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
     </div>
   );
 }

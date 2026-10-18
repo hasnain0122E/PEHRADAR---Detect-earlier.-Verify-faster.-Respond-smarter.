@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { OpsApi } from "@/lib/api/client";
-import type { Scenario, ScenarioRun } from "@/lib/api/types";
+import type { ResetScope, Scenario, ScenarioRun } from "@/lib/api/types";
 import { isLiveRun } from "@/lib/city";
 import { POLL_MS } from "@/lib/ops";
 
@@ -81,8 +81,8 @@ export function useScenarios(api: OpsApi, onFinished?: (run: ScenarioRun) => voi
   }, [refresh, anyLive]);
 
   const start = useCallback(
-    async (id: string) => {
-      const run = await api.startScenario(id);
+    async (id: string, options?: { delayS?: number }) => {
+      const run = await api.startScenario(id, options);
       live.current.add(run.id);
       await refresh();
       return run;
@@ -90,8 +90,8 @@ export function useScenarios(api: OpsApi, onFinished?: (run: ScenarioRun) => voi
     [api, refresh],
   );
 
-  const reset = useCallback(async () => {
-    const result = await api.resetScenarios();
+  const reset = useCallback(async (scope: ResetScope = "demo") => {
+    const result = await api.resetScenarios(scope);
     await refresh();
     return result;
   }, [api, refresh]);

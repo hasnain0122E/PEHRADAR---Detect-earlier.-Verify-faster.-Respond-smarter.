@@ -28,7 +28,7 @@ from app.detection.evidence import EvidenceStore
 from app.detection.fire_pipeline import Detector
 from app.domain.fire_decision import DecisionRule
 from app.models import Camera, ScenarioRun
-from app.services import fire_detection
+from app.services import fire_detection, operations
 
 logger = logging.getLogger("uvicorn.error")
 
@@ -48,6 +48,7 @@ class Scenario:
     trigger_after_seconds: float
     expected_behavior: str
     description: str
+    category: str = "fire"
 
 
 class ScenarioError(Exception):
@@ -69,6 +70,7 @@ def load_scenarios(path: Path = SCENARIO_FILE, asset_dir: Path = ASSET_DIR) -> l
             trigger_after_seconds=float(row["trigger_after_seconds"]),
             expected_behavior=row["expected_behavior"],
             description=row.get("description", ""),
+            category=row.get("category", "fire"),
         )
         if not (asset_dir / scenario.video_asset).is_file():
             raise ValueError(f"Scenario {scenario.id}: missing asset {scenario.video_asset}")
@@ -90,6 +92,8 @@ class ScenarioEngine:
         sample_fps: float,
         max_seconds: float,
         delay_override_s: float | None = None,
+        max_delay_s: float = 300,
+        merge_window_min: float = 0,
         asset_dir: Path = ASSET_DIR,
         clock: Callable[[], datetime] = utc_now,
     ):
@@ -101,6 +105,8 @@ class ScenarioEngine:
         self.sample_fps = sample_fps
         self.max_seconds = max_seconds
         self.delay_override_s = delay_override_s
+        self.max_delay_s = max_delay_s
+        self.merge_window_min = merge_window_min
         self.asset_dir = asset_dir
         self.clock = clock
         self._stop = threading.Event()
@@ -108,7 +114,13 @@ class ScenarioEngine:
 
     # --- operator actions ---
 
-    def start(self, session: Session, scenario_id: str, operator: str | None) -> ScenarioRun:
+    def start(
+        self,
+        session: Session,
+        scenario_id: str,
+        operator: str | None,
+        delay_s: float | None = None,
+    ) -> ScenarioRun:
         scenario = self.scenarios.get(scenario_id)
         if scenario is None or not scenario.enabled:
             raise ScenarioError(404, "SCENARIO_NOT_FOUND", "Scenario not found or disabled")
@@ -122,11 +134,19 @@ class ScenarioEngine:
         camera = session.scalar(select(Camera).where(Camera.code == scenario.camera_code))
         if camera is None:
             raise ScenarioError(409, "SCENARIO_CAMERA_MISSING", "The scenario camera is not seeded")
-        delay = (
-            self.delay_override_s
-            if self.delay_override_s is not None
-            else scenario.trigger_after_seconds
-        )
+        if camera.status != "active":
+            # Network simulation (M6B): an offline node sends no frames, so it cannot detect.
+            raise ScenarioError(
+                409,
+                "SCENARIO_CAMERA_OFFLINE",
+                f"{camera.name} is {camera.status}; bring it online first",
+            )
+        if delay_s is not None:
+            delay = min(delay_s, self.max_delay_s)  # the operator's choice for this run
+        elif self.delay_override_s is not None:
+            delay = self.delay_override_s
+        else:
+            delay = scenario.trigger_after_seconds
         now = self.clock()
         run = ScenarioRun(
             scenario_id=scenario.id,
@@ -209,7 +229,19 @@ class ScenarioEngine:
             if run.status != "running":
                 return  # cancelled while analysing; discard the result
             detection_id = None
-            if body["status"] == "detected":
+            summary = summarize(body)
+            duplicate = (
+                operations.pending_duplicate(
+                    session, camera.id, body["event_type"], self.merge_window_min, self.clock()
+                )
+                if body["status"] == "detected"
+                else None
+            )
+            if duplicate is not None:
+                # Same camera, same event, still awaiting review: one alert, not two.
+                detection_id = duplicate.id
+                summary["merged_into_pending"] = duplicate.id
+            elif body["status"] == "detected":
                 detection_id = fire_detection.record_pending(
                     session,
                     camera,
@@ -229,7 +261,7 @@ class ScenarioEngine:
                 session,
                 run_id,
                 "detected" if detection_id else "not_detected",
-                summarize(body),
+                summary,
                 None,
                 detection_id,
             )

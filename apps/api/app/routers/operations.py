@@ -27,6 +27,17 @@ class ReviewBody(BaseModel):
     note: str | None = Field(default=None, max_length=1000)
 
 
+class CameraStatusBody(BaseModel):
+    status: Literal["active", "offline", "maintenance"]
+    # Neither set: every node. Otherwise the listed camera ids, or every node in `district`.
+    camera_ids: list[str] | None = Field(default=None, max_length=500)
+    district: str | None = Field(default=None, max_length=60)
+
+
+class StationStatusBody(BaseModel):
+    status: Literal["available", "unavailable"]
+
+
 class StatusBody(BaseModel):
     status: Literal["notified", "acknowledged", "resolved", "rejected"]
     operator: str | None = Field(default=None, max_length=80)
@@ -85,6 +96,30 @@ def build_router(settings: Settings, route_provider: RouteProvider | None = None
             return error_response(404, "NOT_FOUND", "Camera not found")
         return camera_json(camera)
 
+    @router.post("/cameras/status")
+    def simulate_camera_status(session: DbSession, body: CameraStatusBody, request: Request):
+        """Demo network simulation (M6B): take nodes offline or bring them back online."""
+        if denied := operator_error(request, settings):
+            return denied
+        ids = body.camera_ids
+        if body.district is not None:
+            ids = list(session.scalars(select(Camera.id).where(Camera.district == body.district)))
+        changed = operations.set_camera_status(session, ids, body.status)
+        return {"status": body.status, "cameras_changed": changed}
+
+    @router.post("/fire-stations/{station_id}/status")
+    def set_station_status(
+        session: DbSession, station_id: str, body: StationStatusBody, request: Request
+    ):
+        """Demo availability flag only; it changes which station is suggested."""
+        if denied := operator_error(request, settings):
+            return denied
+        try:
+            station = operations.set_station_status(session, station_id, body.status)
+        except OperationError as exc:
+            return error_response(exc.status, exc.code, exc.message)
+        return station_json(station)
+
     @router.get("/fire-stations")
     def list_stations(session: DbSession):
         stations = session.scalars(select(FireStation).order_by(FireStation.code))
@@ -135,9 +170,14 @@ def build_router(settings: Settings, route_provider: RouteProvider | None = None
             return denied
         body = body or ReviewBody()
         try:
-            incident = operations.confirm_detection(session, detection_id, body.operator, body.note)
+            incident, merged = operations.confirm_detection(
+                session, detection_id, body.operator, body.note, settings.incident_merge_window_min
+            )
         except OperationError as exc:
             return error_response(exc.status, exc.code, exc.message, **exc.details)
+        if merged:
+            # Joined an open incident, which already has its station and route.
+            return _incident_response(session, incident.id)
         try:
             # After the incident is committed: a routing problem can never undo the confirmation.
             operations.attach_route(session, incident.id, route_provider)

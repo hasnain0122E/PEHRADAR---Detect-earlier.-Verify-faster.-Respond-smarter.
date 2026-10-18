@@ -313,6 +313,11 @@ export function fakeApi(overrides: Partial<OpsApi> = {}): OpsApi {
     listScenarios: vi.fn().mockResolvedValue(scenarioList()),
     startScenario: vi.fn().mockResolvedValue(scenarioRun()),
     resetScenarios: vi.fn().mockResolvedValue({ runs_cancelled: 0, detections_closed: 0, incidents_closed: 0 }),
+    setCameraStatus: vi.fn().mockResolvedValue({ cameras_changed: 0 }),
+    setStationStatus: vi.fn().mockImplementation(async (id: string, status: "available" | "unavailable") => ({
+      ...(id === STATION_ORANGI.id ? STATION_ORANGI : STATION_LANDHI),
+      status,
+    })),
     evidenceSrc: (path) => (path ? `http://api.test${path}` : null),
     mediaSrc: (url) => (url ? (url.startsWith("/") ? `http://api.test${url}` : url) : null),
     ...overrides,

@@ -1,15 +1,18 @@
 import type {
   Camera,
+  CameraStatus,
   Detection,
   DetectionResult,
   FireStation,
   Incident,
   IncidentDetail,
   ResetResult,
+  ResetScope,
   ReviewInput,
   Scenario,
   ScenarioList,
   ScenarioRun,
+  StationStatus,
 } from "./types";
 
 export type ApiErrorKind = "network" | "timeout" | "http" | "unauthorized" | "invalid_response";
@@ -173,8 +176,12 @@ export interface OpsApi {
   confirmDetection(id: string, input?: ReviewInput): Promise<IncidentDetail>;
   rejectDetection(id: string, input?: ReviewInput): Promise<Detection>;
   listScenarios(signal?: AbortSignal): Promise<ScenarioList>;
-  startScenario(id: string): Promise<ScenarioRun>;
-  resetScenarios(): Promise<ResetResult>;
+  startScenario(id: string, options?: { delayS?: number }): Promise<ScenarioRun>;
+  resetScenarios(scope?: ResetScope): Promise<ResetResult>;
+  /** Demo network simulation: every node, a district, or listed nodes online/offline. */
+  setCameraStatus(input: { status: CameraStatus; district?: string; camera_ids?: string[] }): Promise<{ cameras_changed: number }>;
+  /** Demo availability flag; changes which station is suggested for new incidents. */
+  setStationStatus(id: string, status: StationStatus): Promise<FireStation>;
   /** Absolute URL for an API-relative evidence path (images load directly from the API). */
   evidenceSrc(path: string | null): string | null;
   /** Playable URL for a camera stream: API-relative demo media, or an absolute https stream. */
@@ -290,15 +297,31 @@ export function createOpsApi(config: OpsApiConfig): OpsApi {
       items<Scenario>(body, "Scenarios");
       return body as ScenarioList;
     },
-    startScenario: async (id) =>
-      object<ScenarioRun>(await write(`scenarios/${encodeURIComponent(id)}/start`), "Scenario run"),
-    resetScenarios: async () => {
-      const body = await write("scenarios/reset");
-      if (typeof (body as { runs_cancelled?: unknown })?.runs_cancelled !== "number") {
+    startScenario: async (id, options = {}) =>
+      object<ScenarioRun>(
+        await write(
+          `scenarios/${encodeURIComponent(id)}/start`,
+          options.delayS !== undefined ? { delay_s: options.delayS } : {},
+        ),
+        "Scenario run",
+      ),
+    resetScenarios: async (scope = "demo") => {
+      const body = await write("scenarios/reset", { scope });
+      const key = scope === "full" ? "incidents_deleted" : "runs_cancelled";
+      if (typeof (body as Record<string, unknown>)?.[key] !== "number") {
         throw new ApiError("invalid_response", "Reset response did not match the contract");
       }
       return body as ResetResult;
     },
+    setCameraStatus: async (input) => {
+      const body = await write("cameras/status", input);
+      if (typeof (body as { cameras_changed?: unknown })?.cameras_changed !== "number") {
+        throw new ApiError("invalid_response", "Camera status response did not match the contract");
+      }
+      return body as { cameras_changed: number };
+    },
+    setStationStatus: async (id, status) =>
+      object<FireStation>(await write(`fire-stations/${encodeURIComponent(id)}/status`, { status }), "Station"),
     evidenceSrc: (path) => (path ? `${apiBaseUrl}${path}` : null),
     mediaSrc: (url) => {
       if (!url) return null;

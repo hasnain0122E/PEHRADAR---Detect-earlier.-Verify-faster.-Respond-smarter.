@@ -391,17 +391,17 @@ describe("CommandCenter (M5 automated monitoring)", () => {
     fireEvent.click(nav().getByRole("button", { name: "Demo" }));
     const dialog = within(await screen.findByRole("dialog", { name: "Demo scenarios" }));
     fireEvent.click(await dialog.findByRole("button", { name: "Run" }));
-    await waitFor(() => expect(api.startScenario).toHaveBeenCalledWith(SCENARIO_FIRE.id));
+    await waitFor(() => expect(api.startScenario).toHaveBeenCalledWith(SCENARIO_FIRE.id, { delayS: 5 }));
     // The dialog closes: the scenario now runs on its own.
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Demo scenarios" })).toBeNull());
 
     fireEvent.click(nav().getByRole("button", { name: "Demo" }));
     const again = within(await screen.findByRole("dialog", { name: "Demo scenarios" }));
-    fireEvent.click(again.getByRole("button", { name: "Reset demo" }));
+    fireEvent.click(again.getByRole("button", { name: "Reset operations" }));
     expect(api.resetScenarios).not.toHaveBeenCalled(); // two-step
     const loadsBefore = vi.mocked(api.listIncidents).mock.calls.length;
-    fireEvent.click(again.getByRole("button", { name: "Yes, reset demo" }));
-    await waitFor(() => expect(api.resetScenarios).toHaveBeenCalledOnce());
+    fireEvent.click(again.getByRole("button", { name: "Yes, reset operations" }));
+    await waitFor(() => expect(api.resetScenarios).toHaveBeenCalledWith("demo"));
     // Closed scenario incidents show at once, not at the next 10 s poll.
     await waitFor(() => expect(vi.mocked(api.listIncidents).mock.calls.length).toBeGreaterThan(loadsBefore));
   });

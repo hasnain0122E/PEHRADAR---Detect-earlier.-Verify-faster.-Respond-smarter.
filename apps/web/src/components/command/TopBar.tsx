@@ -7,7 +7,7 @@ import { pktTime } from "@/lib/ops";
 import { Icon } from "../icons";
 import type { MapView } from "../map/OpsMap";
 import type { ApiHealthState } from "../useApiHealth";
-import { FOCUS, ICON_BUTTON, Modal, useEscape } from "./ui";
+import { FOCUS, ICON_BUTTON, useEscape } from "./ui";
 
 export type Sound = { supported: boolean; enabled: boolean; enable: () => void; disable: () => void };
 
@@ -148,37 +148,5 @@ export function TopBar(props: TopBarProps) {
         </div>
       </div>
     </header>
-  );
-}
-
-/** Provenance and safety notes, disclosed on demand instead of permanent banners. */
-export function SettingsDialog({ sound, onClose }: { sound: Sound; onClose: () => void }) {
-  return (
-    <Modal title="Settings" onClose={onClose}>
-      {sound.supported && (
-        <label className="flex items-center justify-between gap-3 text-sm">
-          <span className="grid gap-0.5">
-            <span className="font-medium">Alert sound</span>
-            <span className="text-[13px] text-fg-2">Chime when a new detection or incident arrives.</span>
-          </span>
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-navy"
-            checked={sound.enabled}
-            onChange={(e) => (e.target.checked ? sound.enable() : sound.disable())}
-          />
-        </label>
-      )}
-      <section className="grid gap-2 border-t border-line pt-4">
-        <h3 className="text-sm font-medium">About this demo environment</h3>
-        <ul className="grid list-disc gap-1.5 pl-5 text-[13px] text-fg-2">
-          <li>Simulated monitoring network and licensed sample footage. No official or Safe City CCTV is connected.</li>
-          <li>The AI is decision support only. An operator confirms every incident.</li>
-          <li>No notification or dispatch is sent. Not connected to any emergency service.</li>
-          <li>Station availability is demonstration data. The candidate station is chosen by straight-line distance.</li>
-          <li>Stations and roads © OpenStreetMap contributors (ODbL), unverified. Routes by OSRM, estimates only.</li>
-        </ul>
-      </section>
-    </Modal>
   );
 }

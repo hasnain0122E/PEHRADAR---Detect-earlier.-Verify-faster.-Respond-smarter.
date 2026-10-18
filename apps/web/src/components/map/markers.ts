@@ -2,10 +2,15 @@
 // large flame disc) and every state has a glyph, size or outline change, so nothing relies on
 // colour alone.
 //
-// M5 scale: ~180 cameras. Quiet simulated-coverage nodes go to a clustered GeoJSON layer
-// (cameraFeatures). Every camera that needs attention (pending detection, active incident,
-// analysis, selection) and every node with a feed stays an individual HTML marker
+// M5 scale: ~180 cameras. Quiet nodes (with or without a demo feed) go to a clustered GeoJSON
+// layer (cameraFeatures). Every camera that needs attention (pending detection, active incident,
+// analysis, selection) and every public live stream stays an individual HTML marker
 // (buildMarkers), so an alert can never hide inside a cluster.
+//
+// M6B iconography: incidents are anchored pins with a fire or smoke glyph (grey with a check
+// once closed, shown only with the history layer); a pending detection is an amber disc with an
+// exclamation mark; a camera with a feed carries a small live dot; stations are solid rounded
+// squares with a fire-station glyph (grey, dashed and crossed when unavailable).
 
 import type { Camera, Detection, FireStation, Incident } from "@/lib/api/types";
 import { EVENT_LABEL, isActiveIncident, SEVERITY_VIEW, STATUS_LABEL } from "@/lib/ops";
@@ -23,6 +28,8 @@ export interface MarkerSpec {
   select: Selection;
   /** Stacking: incidents above cameras above stations. */
   z: number;
+  /** Pins sit on their point (bottom); discs are centred. */
+  anchor: "center" | "bottom";
 }
 
 export interface MarkerInput {
@@ -34,6 +41,8 @@ export interface MarkerInput {
   /** Cameras whose demo scenario is being analysed by the detector right now. */
   scenarioCameraIds?: string[];
   selection: Selection | null;
+  /** History layer: also draw resolved and rejected incidents (Settings or the layers menu). */
+  showClosed?: boolean;
 }
 
 interface CameraState {
@@ -67,7 +76,6 @@ function cameraState(input: MarkerInput): CameraState {
 /** Cameras drawn as individual HTML markers (never clustered). */
 export function isProminentCamera(c: Camera, state: CameraState): boolean {
   return (
-    c.source_type === "demo_stream" ||
     c.source_type === "public_live" ||
     state.pendingByCamera.has(c.id) ||
     state.incidentByCamera.has(c.id) ||
@@ -82,7 +90,7 @@ export interface CameraFeatureCollection {
     type: "Feature";
     id: number;
     geometry: { type: "Point"; coordinates: [number, number] };
-    properties: { id: string; code: string; name: string; source_type: string; inactive: boolean };
+    properties: { id: string; code: string; name: string; source_type: string; inactive: boolean; feed: boolean };
   }[];
 }
 
@@ -103,14 +111,17 @@ export function cameraFeatures(input: MarkerInput): CameraFeatureCollection {
           name: c.name,
           source_type: c.source_type,
           inactive: c.status !== "active",
+          feed: c.stream_url !== null,
         },
       })),
   };
 }
 
 const CAMERA_SVG = iconSvg("camera", 12);
-const STATION_SVG = iconSvg("station", 13);
-const FLAME_SVG = iconSvg("flame", 16);
+const EXCLAIM_SVG = iconSvg("exclaim", 14);
+const STATION_SVG = iconSvg("fireStation", 14);
+const INCIDENT_SVG = { fire: iconSvg("flame", 15), smoke: iconSvg("smoke", 15), fire_smoke: iconSvg("flame", 15) };
+const CLOSED_SVG = iconSvg("check", 14);
 
 export function buildMarkers(input: MarkerInput): MarkerSpec[] {
   const { cameras, stations, incidents, selection } = input;
@@ -133,6 +144,7 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
       lat: s.latitude,
       className: classes.join(" "),
       html: `<span class="pr-station">${STATION_SVG}</span>${glyph}<span class="pr-label">${escapeHtml(s.name)}</span>`,
+      anchor: "center",
       label: `Fire station: ${s.name} (${s.status === "available" ? "available, demo flag" : "unavailable, demo flag"}${s.id === candidateStationId ? "; candidate station" : ""})`,
       select: { kind: "station", id: s.id },
       z: 1,
@@ -149,9 +161,10 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
     if (incident) classes.push("has-incident");
     if (analyzing.has(c.id)) classes.push("is-analyzing");
     if (c.id === selectedCameraId) classes.push("is-selected");
-    const badge = pendingCount
-      ? `<span class="pr-badge" aria-hidden="true">${pendingCount}</span>`
-      : "";
+    const feed = c.stream_url !== null && c.status === "active";
+    if (feed) classes.push("has-feed");
+    const badge = pendingCount > 1 ? `<span class="pr-badge" aria-hidden="true">${pendingCount}</span>` : "";
+    const live = feed && !pendingCount ? '<span class="pr-live" aria-hidden="true"></span>' : "";
     const states = [
       pendingCount ? `${pendingCount} detection${pendingCount > 1 ? "s" : ""} awaiting review` : null,
       incident ? "active incident" : null,
@@ -165,7 +178,8 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
       lng: c.longitude,
       lat: c.latitude,
       className: classes.join(" "),
-      html: `<span class="pr-pin">${CAMERA_SVG}</span>${badge}<span class="pr-label">${escapeHtml(shortName(c.name))}</span>`,
+      html: `<span class="pr-pin">${pendingCount ? EXCLAIM_SVG : CAMERA_SVG}</span>${live}${badge}<span class="pr-label">${escapeHtml(shortName(c.name))}</span>`,
+      anchor: "center",
       label: `Camera: ${c.name}${states.length ? ` (${states.join(", ")})` : ""}`,
       select: { kind: "camera", id: c.id },
       z: 2,
@@ -174,10 +188,10 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
 
   for (const i of incidents) {
     const isSelected = selectedIncident?.id === i.id;
-    // Closed incidents leave the map unless the operator is looking at one.
-    if (!isActiveIncident(i) && !isSelected) continue;
+    // Closed incidents leave the live map unless the history layer is on or one is selected.
+    if (!isActiveIncident(i) && !isSelected && !input.showClosed) continue;
     const sev = SEVERITY_VIEW[i.severity];
-    const classes = ["pr-marker", "pr-marker-incident", `sev-${i.severity}`, `st-${i.status}`];
+    const classes = ["pr-marker", "pr-marker-incident", `sev-${i.severity}`, `st-${i.status}`, `ev-${i.event_type}`];
     if (!isActiveIncident(i)) classes.push("is-closed");
     if (isSelected) classes.push("is-selected");
     specs.push({
@@ -185,10 +199,11 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
       lng: i.longitude,
       lat: i.latitude,
       className: classes.join(" "),
-      html: `<span class="pr-incident" aria-hidden="true">${FLAME_SVG}</span><span class="pr-label">${escapeHtml(i.camera.location_label)}</span>`,
-      label: `Incident: ${EVENT_LABEL[i.event_type]}, ${sev.label} severity, ${STATUS_LABEL[i.status]}, ${i.camera.location_label}`,
+      html: `<span class="pr-incident" aria-hidden="true"><span class="pr-incident-glyph">${isActiveIncident(i) ? INCIDENT_SVG[i.event_type] : CLOSED_SVG}</span></span><span class="pr-label">${escapeHtml(i.camera.location_label)}</span>`,
+      anchor: "bottom",
+      label: `${isActiveIncident(i) ? "Incident" : "Closed incident"}: ${EVENT_LABEL[i.event_type]}, ${sev.label} severity, ${STATUS_LABEL[i.status]}, ${i.camera.location_label}`,
       select: { kind: "incident", id: i.id },
-      z: 3,
+      z: isActiveIncident(i) ? 4 : 3,
     });
   }
   return specs;

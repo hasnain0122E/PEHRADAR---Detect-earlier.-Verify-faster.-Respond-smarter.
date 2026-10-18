@@ -53,6 +53,7 @@ TIMELINE_EVENT_TYPES = (
     "no_station_available",
     "route_generated",
     "route_unavailable",
+    "detection_merged",
     "status_changed",
     "resolved",
     "rejected",

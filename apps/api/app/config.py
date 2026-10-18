@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     scenarios_enabled: bool | None = None
     scenario_worker: bool = True  # background thread that triggers due runs (tests drive tick())
     scenario_delay_override_s: float | None = Field(default=None, ge=0)  # same delay for all
+    # M6B: longest delay an operator may request when starting a run (Settings › Scenario delay).
+    scenario_max_delay_s: float = Field(default=300, gt=0)
+    # M6B incident merge rule: a confirmed detection from the same camera with the same event type
+    # within this many minutes of an active incident's latest detection joins that incident.
+    incident_merge_window_min: float = Field(default=30, ge=0)  # 0 disables merging
     # M5 suggested response route. osrm: the public OSRM demo server unless OSRM_BASE_URL is set.
     routing_provider: Literal["osrm", "none"] = "osrm"
     osrm_base_url: str = "https://router.project-osrm.org"

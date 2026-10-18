@@ -1,35 +1,82 @@
 {
-  "_about": "PehRadar M5 demo scenarios. Each run plays a licensed sample clip (demo_assets/SOURCES.md) on a SIMULATED demo-stream node and runs it through the real fire/smoke detector when trigger_after_seconds pass. A positive result becomes a pending detection for operator review; nothing is ever auto-confirmed. expected_behavior documents the intended outcome; the real model decides the actual one.",
+  "_about": "PehRadar demo scenarios (M5, extended in M6B). Each run plays a licensed clip (demo_assets/SOURCES.md) on a SIMULATED demo-stream node and runs it through the real fire/smoke detector when trigger_after_seconds pass (operators can choose a shorter or longer delay per run in Settings). A positive result becomes a pending detection for operator review; nothing is ever auto-confirmed. expected_behavior documents the intended outcome, checked against the real model on 2026-10-18; the model decides the actual one. The positive clips are not from Karachi (Jamestown ND, 2005; California, 1964); the lookalike clips include Pakistan-based demo footage.",
   "scenarios": [
     {
       "id": "korangi-industrial-fire",
       "name": "Korangi industrial fire",
+      "category": "fire",
       "enabled": true,
       "camera_code": "KHI-CAM-03",
       "video_asset": "fire_jamestown_night.mp4",
-      "trigger_after_seconds": 45,
+      "trigger_after_seconds": 6,
       "expected_behavior": "fire_detected",
-      "description": "Night building fire on the Korangi Industrial Area node. Expected: a pending FIRE detection for operator review."
+      "description": "Strong night building fire on the Korangi Industrial Area node. Expected: a pending FIRE detection (about 0.73) for operator review."
     },
     {
       "id": "clifton-structure-smoke",
       "name": "Clifton structure smoke",
+      "category": "smoke",
       "enabled": true,
       "camera_code": "KHI-CAM-02",
       "video_asset": "smoke_structure_1964.mp4",
-      "trigger_after_seconds": 30,
+      "trigger_after_seconds": 6,
       "expected_behavior": "smoke_detected",
       "description": "Heavy structure smoke on the Clifton Boat Basin node. Expected: a pending SMOKE detection for operator review."
     },
     {
+      "id": "site-warehouse-night-fire",
+      "name": "SITE warehouse fire (second camera angle)",
+      "category": "fire",
+      "enabled": true,
+      "camera_code": "KHI-CAM-04",
+      "video_asset": "fire_jamestown_night_2.mp4",
+      "trigger_after_seconds": 6,
+      "expected_behavior": "fire_detected",
+      "description": "A weaker night fire on the SITE Industrial Area node. Expected: a pending FIRE detection with lower confidence (about 0.64, medium severity)."
+    },
+    {
+      "id": "korangi-follow-up-detection",
+      "name": "Korangi follow-up detection (merge rule)",
+      "category": "fire",
+      "enabled": true,
+      "camera_code": "KHI-CAM-03",
+      "video_asset": "fire_jamestown_night.mp4",
+      "trigger_after_seconds": 6,
+      "expected_behavior": "fire_detected",
+      "description": "Run after confirming the Korangi fire. The same camera reports fire again: confirming it adds an 'Additional detection' event to the open incident instead of creating a second incident."
+    },
+    {
       "id": "lyari-sunset-glare",
       "name": "Lyari sunset glare (false-alarm lookalike)",
+      "category": "false_alarm",
       "enabled": true,
       "camera_code": "KHI-CAM-07",
       "video_asset": "street_sunset_traffic.mp4",
-      "trigger_after_seconds": 20,
+      "trigger_after_seconds": 6,
       "expected_behavior": "no_detection",
       "description": "Orange sunset glare and tail lights on the Lyari node. Expected: the temporal rule does not confirm fire or smoke, so no detection is created."
+    },
+    {
+      "id": "shahrah-e-faisal-night-headlights",
+      "name": "Shahrah-e-Faisal night headlights (roadway lookalike)",
+      "category": "roadway",
+      "enabled": true,
+      "camera_code": "KHI-SEF-001",
+      "video_asset": "pk_peshawar_night_road.mp4",
+      "trigger_after_seconds": 6,
+      "expected_behavior": "no_detection",
+      "description": "Night traffic with bright headlights and signage (Pakistan-based demo footage, Peshawar). Single frames score near 0.6 for fire and smoke, but never 3 of 5 in a row, so no detection is created."
+    },
+    {
+      "id": "ii-chundrigar-lobby-lighting",
+      "name": "I.I. Chundrigar lobby lighting (interior lookalike)",
+      "category": "interior",
+      "enabled": true,
+      "camera_code": "KHI-IIC-003",
+      "video_asset": "pk_faisalabad_hotel_lobby.mp4",
+      "trigger_after_seconds": 6,
+      "expected_behavior": "no_detection",
+      "description": "Interior lobby with warm chandelier lighting (Pakistan-based demo footage, Faisalabad). One frame scores 0.61 for smoke; the temporal rule holds, so no detection is created. No licensed interior fire footage is available for a positive interior case."
     }
   ]
 }

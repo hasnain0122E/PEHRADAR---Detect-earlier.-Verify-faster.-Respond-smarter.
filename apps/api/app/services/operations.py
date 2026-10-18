@@ -5,15 +5,17 @@ updated are locked (SELECT ... FOR UPDATE on PostgreSQL); the UNIQUE constraints
 incident.detection_event_id and (incident_id, seq) are the last line of defence against races.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import utc_now
 from app.domain.incident_rules import (
+    CAMERA_STATUSES,
     OPERATOR_TARGETS,
+    STATION_STATUSES,
     TERMINAL,
     can_transition,
     nearest_available_station,
@@ -82,14 +84,47 @@ def record_detection(
     return detection
 
 
+MERGE_MESSAGE = "Additional detection received from same camera"
+
+
 def confirm_detection(
-    session: Session, detection_id: str, operator: str | None, note: str | None
-) -> Incident:
+    session: Session,
+    detection_id: str,
+    operator: str | None,
+    note: str | None,
+    merge_window_min: float = 0,
+) -> tuple[Incident, bool]:
+    """Confirms a pending detection. Returns (incident, merged).
+
+    Merge rule (M6B): when an active incident exists for the same camera, both belong to the
+    fire-response family (fire, smoke, fire_smoke), and the new detection is within
+    `merge_window_min` of that incident's latest detection, no new incident is created; the
+    detection joins the existing incident with a timeline event. The incident keeps its original
+    event type, severity, station and route."""
     detection = _pending_detection(session, detection_id)
     camera = detection.camera
     now = utc_now()
     detection.review_status, detection.reviewed_at = "confirmed", now
     detection.reviewed_by, detection.review_note = operator, note
+
+    target = _merge_target(session, detection, merge_window_min)
+    if target is not None:
+        _log(
+            target,
+            "detection_merged",
+            "operator",
+            f"{MERGE_MESSAGE} (confidence {detection.confidence:.2f}). "
+            "Confirmed by the operator; no new incident created",
+            {
+                "detection_event_id": detection.id,
+                "confidence": detection.confidence,
+                "detected_at": detection.detected_at.isoformat(),
+                "note": note,
+            },
+            actor_label=operator,
+        )
+        _commit(session, "DETECTION_ALREADY_REVIEWED", "This detection was already reviewed")
+        return target, True
 
     incident = Incident(
         camera_id=camera.id,
@@ -123,7 +158,85 @@ def confirm_detection(
     )
     _select_station(session, incident)
     _commit(session, "DETECTION_ALREADY_REVIEWED", "This detection was already reviewed")
-    return incident
+    return incident, False
+
+
+def latest_detection_at(incident: Incident) -> datetime:
+    """The incident's own detection time or the newest detection merged into it."""
+    times = [incident.detection.detected_at]
+    for event in incident.timeline:
+        if event.event_type == "detection_merged" and event.details.get("detected_at"):
+            times.append(datetime.fromisoformat(event.details["detected_at"]))
+    return max(times)
+
+
+# Detections that describe the same fire on one camera: smoke, flames, or both.
+FIRE_RESPONSE_FAMILY = frozenset({"fire", "smoke", "fire_smoke"})
+
+
+def _merge_target(
+    session: Session, detection: DetectionEvent, window_min: float
+) -> Incident | None:
+    if window_min <= 0 or detection.event_type not in FIRE_RESPONSE_FAMILY:
+        return None
+    candidates = session.scalars(
+        select(Incident)
+        .where(
+            Incident.camera_id == detection.camera_id,
+            Incident.event_type.in_(tuple(FIRE_RESPONSE_FAMILY)),
+            Incident.status.not_in(tuple(TERMINAL)),
+        )
+        .order_by(Incident.created_at.desc())
+    ).all()
+    window = timedelta(minutes=window_min)
+    for incident in candidates:
+        if abs(detection.detected_at - latest_detection_at(incident)) <= window:
+            return incident
+    return None
+
+
+def pending_duplicate(
+    session: Session, camera_id: str, event_type: str, window_min: float, now: datetime
+) -> DetectionEvent | None:
+    """A pending detection on the same camera with the same event type inside the merge window.
+    The scenario engine attaches to it instead of raising a second alert for the same event."""
+    if window_min <= 0:
+        return None
+    return session.scalar(
+        select(DetectionEvent)
+        .where(
+            DetectionEvent.camera_id == camera_id,
+            DetectionEvent.event_type == event_type,
+            DetectionEvent.review_status == "pending",
+            DetectionEvent.detected_at >= now - timedelta(minutes=window_min),
+        )
+        .order_by(DetectionEvent.detected_at.desc())
+        .limit(1)
+    )
+
+
+def set_camera_status(session: Session, camera_ids: list[str] | None, status: str) -> int:
+    """Demo network simulation: marks nodes active, offline or maintenance (None = every node)."""
+    if status not in CAMERA_STATUSES:
+        raise OperationError(422, "VALIDATION_ERROR", f"Unknown camera status {status}")
+    query = update(Camera).values(status=status, updated_at=utc_now())
+    if camera_ids is not None:
+        query = query.where(Camera.id.in_(camera_ids))
+    changed = session.execute(query).rowcount
+    session.commit()
+    return changed
+
+
+def set_station_status(session: Session, station_id: str, status: str) -> FireStation:
+    """Demo availability toggle; never a claim about real-world availability."""
+    if status not in STATION_STATUSES:
+        raise OperationError(422, "VALIDATION_ERROR", f"Unknown station status {status}")
+    station = session.get(FireStation, station_id)
+    if station is None:
+        raise OperationError(404, "NOT_FOUND", "Fire station not found")
+    station.status = status
+    session.commit()
+    return station
 
 
 def attach_route(session: Session, incident_id: str, provider: RouteProvider | None) -> None:
@@ -330,7 +443,8 @@ RESET_LABEL = "Demo reset"
 def reset_scenario_data(session: Session) -> dict[str, int]:
     """Demo reset: cancels unfinished scenario runs, rejects pending scenario detections and closes
     open incidents that came from scenario detections. Nothing is deleted, every change is a
-    normal review or timeline record, and upload-created data is never touched."""
+    normal review or timeline record, and upload-created data is never touched. Closed
+    incidents stay in history; the live map shows only active ones."""
     now = utc_now()
     runs = session.scalars(
         select(ScenarioRun).where(ScenarioRun.status.in_(("scheduled", "running")))
@@ -372,3 +486,23 @@ def reset_scenario_data(session: Session) -> dict[str, int]:
         "detections_closed": len(pending),
         "incidents_closed": len(incidents),
     }
+
+
+def full_reset(session: Session) -> dict[str, int]:
+    """Full demo clear (the UI asks for explicit confirmation): deletes every detection,
+    incident, timeline event and scenario run, puts every node back online and every station
+    back to available. Seeded cameras, stations and demo feeds are kept."""
+    counts = {
+        "timeline_events_deleted": session.execute(delete(IncidentTimelineEvent)).rowcount,
+        "incidents_deleted": session.execute(delete(Incident)).rowcount,
+        "scenario_runs_deleted": session.execute(delete(ScenarioRun)).rowcount,
+        "detections_deleted": session.execute(delete(DetectionEvent)).rowcount,
+    }
+    counts["cameras_restored"] = session.execute(
+        update(Camera).where(Camera.status != "active").values(status="active")
+    ).rowcount
+    counts["stations_restored"] = session.execute(
+        update(FireStation).where(FireStation.status != "available").values(status="available")
+    ).rowcount
+    _commit(session, "CONCURRENT_UPDATE", "Demo data changed concurrently; retry the reset")
+    return counts

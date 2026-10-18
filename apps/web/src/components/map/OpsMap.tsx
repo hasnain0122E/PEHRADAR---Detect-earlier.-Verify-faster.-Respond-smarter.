@@ -17,8 +17,11 @@ import { type Selection, selectionKey } from "../command/selection";
 import { Icon, type IconName } from "../icons";
 import { buildMarkers, cameraFeatures, type MarkerInput } from "./markers";
 
-/** OpenFreeMap Positron: light neutral basemap, free, no API key, OpenStreetMap data. */
-const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
+/** OpenFreeMap basemaps: free, no API key, OpenStreetMap data. Positron (light) and Dark. */
+const STYLE_URL: Record<MapTheme, string> = {
+  light: "https://tiles.openfreemap.org/styles/positron",
+  dark: "https://tiles.openfreemap.org/styles/dark",
+};
 const WORKER_URL = "/vendor/maplibre-gl/maplibre-gl-worker.mjs";
 const FONT = ["Noto Sans Regular"]; // served by every OpenFreeMap style
 const KARACHI_CENTER: [number, number] = [67.0611, 24.8807];
@@ -27,14 +30,49 @@ const KARACHI_BOUNDS: [[number, number], [number, number]] = [
   [66.45, 24.6],
   [67.75, 25.4],
 ];
-const VIEW_3D = { pitch: 52, bearing: -17 };
+// M6B: a steeper, slightly rotated camera with sky and lit buildings reads as 3D even at city
+// zoom; the 2D view stays flat and north-up.
+const VIEW_3D = { pitch: 60, bearing: -20 };
 const VIEW_2D = { pitch: 0, bearing: 0 };
 /** Buildings only when they carry information: below this zoom the extrusion layer is hidden. */
-const BUILDINGS_MIN_ZOOM = 13.5;
+const BUILDINGS_MIN_ZOOM = 12.5;
 
 type MapState = "loading" | "ready" | "tiles-failed" | "unsupported";
 type Layer = "cameras" | "stations" | "incidents";
 export type MapView = "3d" | "2d";
+export type MapTheme = "light" | "dark";
+
+/** GL layer colours per theme (HTML markers follow the CSS tokens). */
+const PALETTE = {
+  light: {
+    canvas: "#eef0f2",
+    cluster: "#ffffff",
+    clusterStroke: "#d0d5dd",
+    clusterText: "#111318",
+    coverage: "#98a2b3",
+    feed: "#16a36a",
+    mapped: "#111827",
+    pointStroke: "#ffffff",
+    routeCasing: "#ffffff",
+    route: "#2563eb",
+    buildings: ["#e9ecef", "#d9dde3", "#c6ccd5"],
+    sky: { "sky-color": "#dce9f7", "horizon-color": "#f3f5f8", "fog-color": "#f1f3f5" },
+  },
+  dark: {
+    canvas: "#0b0d11",
+    cluster: "#1b1f27",
+    clusterStroke: "#3a4250",
+    clusterText: "#e9ebef",
+    coverage: "#6b7486",
+    feed: "#22b573",
+    mapped: "#c9d1dd",
+    pointStroke: "#0b0d11",
+    routeCasing: "#0b0d11",
+    route: "#4f8bff",
+    buildings: ["#1d222b", "#262c37", "#313946"],
+    sky: { "sky-color": "#0d1525", "horizon-color": "#1a2333", "fog-color": "#11151c" },
+  },
+} as const;
 
 export interface MapFocus {
   /** Changes for every new focus request (e.g. a new alert). */
@@ -51,6 +89,9 @@ export interface OpsMapProps extends MarkerInput {
   route?: [number, number][] | null;
   focus?: MapFocus | null;
   view?: MapView;
+  theme?: MapTheme;
+  /** History layer toggle from the layers menu (mirrors Settings: show resolved incidents). */
+  onShowClosed?: (on: boolean) => void;
 }
 
 type Point = [number, number];
@@ -101,14 +142,15 @@ export const prefersReducedMotion = () =>
 const CAMERA_LAYERS = ["pr-cluster", "pr-cluster-count", "pr-camera-point"];
 const pointOpacity = (): ExpressionSpecification => ["case", ["get", "inactive"], 0.4, 1];
 
-function cityLayers(): LayerSpecification[] {
+function cityLayers(theme: MapTheme): LayerSpecification[] {
+  const c = PALETTE[theme];
   return [
     {
       id: "pr-route-casing",
       type: "line",
       source: "pr-route",
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": "#ffffff", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 15, 12] },
+      paint: { "line-color": c.routeCasing, "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 15, 12] },
     },
     {
       id: "pr-route-line",
@@ -116,7 +158,7 @@ function cityLayers(): LayerSpecification[] {
       source: "pr-route",
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "line-color": "#2563eb",
+        "line-color": c.route,
         "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 15, 6],
       },
     },
@@ -126,8 +168,8 @@ function cityLayers(): LayerSpecification[] {
       source: "pr-cameras",
       filter: ["has", "point_count"],
       paint: {
-        "circle-color": "#ffffff",
-        "circle-stroke-color": "#d0d5dd",
+        "circle-color": c.cluster,
+        "circle-stroke-color": c.clusterStroke,
         "circle-stroke-width": 1,
         "circle-radius": ["step", ["get", "point_count"], 13, 10, 15, 25, 18],
       },
@@ -143,7 +185,7 @@ function cityLayers(): LayerSpecification[] {
         "text-size": 12,
         "text-allow-overlap": true,
       },
-      paint: { "text-color": "#111318" },
+      paint: { "text-color": c.clusterText },
     },
     {
       id: "pr-camera-point",
@@ -152,8 +194,16 @@ function cityLayers(): LayerSpecification[] {
       filter: ["!", ["has", "point_count"]],
       paint: {
         "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 15, 6],
-        "circle-color": ["match", ["get", "source_type"], "verified_mapped", "#111827", "#98a2b3"],
-        "circle-stroke-color": "#ffffff",
+        // Green: a node with a (demo) feed. Dark: a mapped location. Grey: coverage only.
+        "circle-color": [
+          "case",
+          ["get", "feed"],
+          c.feed,
+          ["==", ["get", "source_type"], "verified_mapped"],
+          c.mapped,
+          c.coverage,
+        ],
+        "circle-stroke-color": c.pointStroke,
         "circle-stroke-width": 1.5,
         "circle-opacity": pointOpacity(),
         "circle-stroke-opacity": pointOpacity(),
@@ -162,8 +212,9 @@ function cityLayers(): LayerSpecification[] {
   ];
 }
 
-/** Very subtle light-grey extrusions: depth without a dark cityscape. */
-function buildingLayer(): LayerSpecification {
+/** Lit extrusions graded by height: depth without darkening the light map. */
+function buildingLayer(theme: MapTheme): LayerSpecification {
+  const [low, mid, high] = PALETTE[theme].buildings;
   return {
     id: "pr-buildings-3d",
     type: "fill-extrusion",
@@ -176,11 +227,11 @@ function buildingLayer(): LayerSpecification {
         ["linear"],
         ["coalesce", ["get", "render_height"], 6],
         0,
-        "#eceef1",
-        60,
-        "#e3e6ea",
-        150,
-        "#dadee3",
+        low,
+        40,
+        mid,
+        120,
+        high,
       ],
       // Rise in over one zoom level instead of popping in.
       "fill-extrusion-height": [
@@ -190,26 +241,80 @@ function buildingLayer(): LayerSpecification {
         BUILDINGS_MIN_ZOOM,
         0,
         BUILDINGS_MIN_ZOOM + 1,
-        ["coalesce", ["get", "render_height"], 6],
+        // Slightly exaggerated so mid-rise Karachi reads as 3D at district zoom.
+        ["*", 1.4, ["coalesce", ["get", "render_height"], 6]],
       ],
       "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-      "fill-extrusion-opacity": 0.8,
+      "fill-extrusion-opacity": 0.9,
       "fill-extrusion-vertical-gradient": true,
     },
   };
 }
 
+/** Adds the PehRadar sources and layers to a freshly loaded basemap style. */
+function installCityStyle(map: MapLibreMap, theme: MapTheme, view: MapView) {
+  const styleLayers = map.getStyle().layers;
+  const firstSymbol = styleLayers.find((l) => l.type === "symbol")?.id;
+  // One calm label per place: the Latin name only (the basemaps print Latin and local script).
+  for (const l of styleLayers) {
+    if (l.type === "symbol" && JSON.stringify(l.layout?.["text-field"] ?? "").includes("name")) {
+      map.setLayoutProperty(l.id, "text-field", ["coalesce", ["get", "name:en"], ["get", "name:latin"], ["get", "name"]]);
+    }
+  }
+  map.addSource("pr-cameras", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+    cluster: true,
+    clusterRadius: 46,
+    clusterMaxZoom: 14,
+  });
+  map.addSource("pr-route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  try {
+    map.addLayer(buildingLayer(theme), firstSymbol);
+  } catch {
+    // A style without the OpenMapTiles building layer simply stays flat.
+  }
+  for (const layer of cityLayers(theme)) map.addLayer(layer);
+  applyDepth(map, theme, view);
+}
+
+/** 3D: buildings, a soft sky at the horizon and a light from the south-west. 2D: flat. */
+function applyDepth(map: MapLibreMap, theme: MapTheme, view: MapView) {
+  const on = view === "3d";
+  if (map.getLayer("pr-buildings-3d")) map.setLayoutProperty("pr-buildings-3d", "visibility", on ? "visible" : "none");
+  try {
+    map.setLight({ anchor: "viewport", color: "#ffffff", intensity: theme === "dark" ? 0.25 : 0.4, position: [1.4, 210, 35] });
+    // 2D: a fully transparent sky blend leaves the flat basemap untouched.
+    map.setSky({
+      ...PALETTE[theme].sky,
+      "sky-horizon-blend": on ? 0.6 : 0,
+      "horizon-fog-blend": on ? 0.4 : 0,
+      "fog-ground-blend": on ? 0.75 : 1,
+      "atmosphere-blend": 0,
+    });
+  } catch {
+    // A style or GPU without sky support keeps the plain view.
+  }
+}
+
 export function OpsMap(props: OpsMapProps) {
-  const { onSelect, route = null, focus = null, view = "3d", ...input } = props;
+  const { onSelect, route = null, focus = null, view = "3d", theme = "light", onShowClosed, ...input } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerCtor = useRef<typeof Marker | null>(null);
   const markers = useRef(new Map<string, { marker: Marker; el: HTMLButtonElement }>());
   const onSelectRef = useRef(onSelect);
   const [state, setState] = useState<MapState>("loading");
-  // Bumped once the map exists, and again when the style has loaded (layers can be added).
+  // Bumped once the map exists. styleVersion counts style loads (first load and theme swaps):
+  // every effect that writes to a source or layer reruns after one.
   const [markersVersion, setMarkersVersion] = useState(0);
-  const [styleReady, setStyleReady] = useState(false);
+  const [styleVersion, setStyleVersion] = useState(0);
+  const styleReady = styleVersion > 0;
+  const themeRef = useRef(theme);
+  const viewRef = useRef(view);
+  useEffect(() => {
+    viewRef.current = view;
+  });
   const [layersOpen, setLayersOpen] = useState(false);
   const [layers, setLayers] = useState<Record<Layer, boolean>>({
     cameras: true,
@@ -239,7 +344,7 @@ export function OpsMap(props: OpsMapProps) {
       try {
         map = new lib.Map({
           container: container.current,
-          style: STYLE_URL,
+          style: STYLE_URL[themeRef.current],
           center: KARACHI_CENTER,
           zoom: 10.6,
           minZoom: 9,
@@ -254,31 +359,16 @@ export function OpsMap(props: OpsMapProps) {
         return;
       }
       let styleLoaded = false;
-      map.on("load", () => {
+      // Runs on the first load and after every theme swap (setStyle drops custom layers).
+      map.on("style.load", () => {
         styleLoaded = true;
         if (cancelled) return;
-        const styleLayers = map.getStyle().layers;
-        const firstSymbol = styleLayers.find((l) => l.type === "symbol")?.id;
-        // One calm label per place: the Latin name only (Positron prints Latin + local script).
-        for (const l of styleLayers) {
-          if (l.type === "symbol" && JSON.stringify(l.layout?.["text-field"] ?? "").includes("name")) {
-            map.setLayoutProperty(l.id, "text-field", ["coalesce", ["get", "name:en"], ["get", "name:latin"], ["get", "name"]]);
-          }
-        }
-        map.addSource("pr-cameras", {
-          type: "geojson",
-          data: { type: "FeatureCollection", features: [] },
-          cluster: true,
-          clusterRadius: 46,
-          clusterMaxZoom: 14,
-        });
-        map.addSource("pr-route", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
-        try {
-          map.addLayer(buildingLayer(), firstSymbol);
-        } catch {
-          // A style without the OpenMapTiles building layer simply stays flat.
-        }
-        for (const layer of cityLayers()) map.addLayer(layer);
+        installCityStyle(map, themeRef.current, viewRef.current);
+        setStyleVersion((v) => v + 1);
+        setState("ready");
+      });
+      map.on("load", () => {
+        // Layer-bound handlers survive style swaps (they look the layer up per event).
         map.on("click", "pr-cluster", async (event) => {
           const feature = event.features?.[0] as MapGeoJSONFeature | undefined;
           const clusterId = feature?.properties?.cluster_id;
@@ -299,8 +389,6 @@ export function OpsMap(props: OpsMapProps) {
           map.on("mouseenter", id, () => (map.getCanvas().style.cursor = "pointer"));
           map.on("mouseleave", id, () => (map.getCanvas().style.cursor = ""));
         }
-        setStyleReady(true);
-        setState("ready");
       });
       map.on("error", () => {
         // Individual tile errors after load are tolerated; a style that never loads is not.
@@ -325,10 +413,17 @@ export function OpsMap(props: OpsMapProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const { cameras, stations, incidents, pending, analyzingCameraId, scenarioCameraIds, selection } = input;
+  // Theme swap: load the other basemap; "style.load" reinstalls the PehRadar layers.
+  useEffect(() => {
+    if (themeRef.current === theme) return;
+    themeRef.current = theme;
+    mapRef.current?.setStyle(STYLE_URL[theme]);
+  }, [theme]);
+
+  const { cameras, stations, incidents, pending, analyzingCameraId, scenarioCameraIds, selection, showClosed } = input;
   const markerInput = useMemo<MarkerInput>(
-    () => ({ cameras, stations, incidents, pending, analyzingCameraId, scenarioCameraIds, selection }),
-    [cameras, stations, incidents, pending, analyzingCameraId, scenarioCameraIds, selection],
+    () => ({ cameras, stations, incidents, pending, analyzingCameraId, scenarioCameraIds, selection, showClosed }),
+    [cameras, stations, incidents, pending, analyzingCameraId, scenarioCameraIds, selection, showClosed],
   );
   const specs = useMemo(() => buildMarkers(markerInput), [markerInput]);
   const features = useMemo(() => cameraFeatures(markerInput), [markerInput]);
@@ -338,7 +433,7 @@ export function OpsMap(props: OpsMapProps) {
   useEffect(() => {
     if (!styleReady) return;
     mapRef.current?.getSource<GeoJSONSource>("pr-cameras")?.setData(features);
-  }, [features, styleReady]);
+  }, [features, styleReady, styleVersion]);
 
   useEffect(() => {
     if (!styleReady) return;
@@ -348,7 +443,7 @@ export function OpsMap(props: OpsMapProps) {
         ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route } }]
         : [],
     });
-  }, [route, routeMode, styleReady]);
+  }, [route, routeMode, styleReady, styleVersion]);
 
   // Route mode: the clustered network recedes (HTML markers are dimmed in CSS).
   useEffect(() => {
@@ -360,7 +455,7 @@ export function OpsMap(props: OpsMapProps) {
     map.setPaintProperty("pr-cluster-count", "text-opacity", routeMode ? dim : 1);
     map.setPaintProperty("pr-camera-point", "circle-opacity", routeMode ? dim : pointOpacity());
     map.setPaintProperty("pr-camera-point", "circle-stroke-opacity", routeMode ? dim : pointOpacity());
-  }, [routeMode, styleReady]);
+  }, [routeMode, styleReady, styleVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -368,14 +463,12 @@ export function OpsMap(props: OpsMapProps) {
     for (const id of CAMERA_LAYERS) {
       if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", layers.cameras ? "visible" : "none");
     }
-  }, [layers.cameras, styleReady]);
+  }, [layers.cameras, styleReady, styleVersion]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !styleReady) return;
-    if (map.getLayer("pr-buildings-3d")) {
-      map.setLayoutProperty("pr-buildings-3d", "visibility", view === "3d" ? "visible" : "none");
-    }
+    applyDepth(map, themeRef.current, view);
     map.easeTo({ ...(view === "3d" ? VIEW_3D : VIEW_2D), duration: prefersReducedMotion() ? 0 : 700 });
   }, [view, styleReady]);
 
@@ -397,7 +490,7 @@ export function OpsMap(props: OpsMapProps) {
         });
         const marker = new MarkerClass({
           element: el,
-          anchor: "center",
+          anchor: spec.anchor,
           pitchAlignment: "viewport",
           rotationAlignment: "viewport",
         })
@@ -478,7 +571,7 @@ export function OpsMap(props: OpsMapProps) {
   const motion = () => (prefersReducedMotion() ? 0 : 300);
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden bg-[#eef0f2]">
+    <div className="relative min-h-0 flex-1 overflow-hidden" style={{ background: PALETTE[theme].canvas }}>
       {/* MapLibre's own CSS makes the container position:relative, so size it from a wrapper. */}
       <div className="absolute inset-0">
         <div
@@ -502,6 +595,8 @@ export function OpsMap(props: OpsMapProps) {
           {layersOpen && (
             <LayersPanel
               layers={layers}
+              showClosed={!!showClosed}
+              onShowClosed={onShowClosed}
               onChange={(layer, on) => setLayers((prev) => ({ ...prev, [layer]: on }))}
               onClose={() => setLayersOpen(false)}
             />
@@ -555,10 +650,14 @@ const LAYER_LABEL: Record<Layer, string> = { cameras: "Cameras", stations: "Fire
 
 function LayersPanel({
   layers,
+  showClosed,
+  onShowClosed,
   onChange,
   onClose,
 }: {
   layers: Record<Layer, boolean>;
+  showClosed: boolean;
+  onShowClosed?: (on: boolean) => void;
   onChange: (layer: Layer, on: boolean) => void;
   onClose: () => void;
 }) {
@@ -586,16 +685,28 @@ function LayersPanel({
             />
           </label>
         ))}
+        {onShowClosed && (
+          <label className="flex cursor-pointer items-center justify-between gap-2 text-[13px]">
+            Resolved incidents (history)
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-navy"
+              checked={showClosed}
+              onChange={(e) => onShowClosed(e.target.checked)}
+            />
+          </label>
+        )}
       </fieldset>
       <div className="grid gap-2">
         <p className="text-xs font-medium tracking-wide text-fg-3 uppercase">Legend</p>
         <ul className="grid gap-2 text-[13px] text-fg-2">
           <LegendRow swatch={<span className="legend-cluster">12</span>}>Group of nodes</LegendRow>
           <LegendRow swatch={<span className="legend-dot" />}>Simulated coverage node</LegendRow>
-          <LegendRow swatch={<span className="legend-dot is-feed" />}>Camera with a feed</LegendRow>
+          <LegendRow swatch={<span className="legend-dot is-live" />}>Node with a demo feed</LegendRow>
           <LegendRow swatch={<span className="legend-dot is-selected" />}>Selected</LegendRow>
           <LegendRow swatch={<span className="legend-dot is-pending" />}>Detection to review</LegendRow>
-          <LegendRow swatch={<span className="legend-dot is-incident" />}>Confirmed incident</LegendRow>
+          <LegendRow swatch={<span className="legend-pin" />}>Confirmed incident (fire or smoke)</LegendRow>
+          {showClosed && <LegendRow swatch={<span className="legend-pin is-closed" />}>Closed incident (history)</LegendRow>}
           <LegendRow swatch={<span className="legend-station" />}>Fire station (demo availability)</LegendRow>
           <LegendRow swatch={<span className="legend-station is-unavailable" />}>Station unavailable</LegendRow>
           <LegendRow swatch={<span className="legend-route" />}>Suggested route (estimate)</LegendRow>

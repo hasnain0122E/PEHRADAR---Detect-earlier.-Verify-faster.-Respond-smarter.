@@ -83,6 +83,8 @@ export function timelineView(event: TimelineEvent): TimelineView {
       return { label: "Suggested route", tone: "bg-info" };
     case "route_unavailable":
       return { label: "Route unavailable", tone: "bg-fg-3" };
+    case "detection_merged":
+      return { label: "Additional detection", tone: "bg-warn" };
     case "status_changed": {
       const to = event.details?.to;
       if (to === "notified") return { label: "Notified", tone: "bg-info" };

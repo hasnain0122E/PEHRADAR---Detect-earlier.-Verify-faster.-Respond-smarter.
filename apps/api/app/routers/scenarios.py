@@ -2,11 +2,12 @@
 
 GET  /scenarios                 configured scenarios + each one's latest run (public read)
 POST /scenarios/{id}/start      schedule a run (operator)
-POST /scenarios/reset           demo reset (operator)
+POST /scenarios/reset           demo reset (operator); {"scope": "full"} also clears history
 GET  /media/{name}              licensed demo clips from demo_assets/ (Range requests supported)
 """
 
 import re
+from typing import Literal
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
@@ -32,6 +33,14 @@ DISCLAIMER = (
 
 class StartBody(BaseModel):
     operator: str | None = Field(default=None, max_length=80)
+    # M6B: per-run trigger delay chosen in Settings; the server caps it (SCENARIO_MAX_DELAY_S).
+    delay_s: float | None = Field(default=None, ge=0)
+
+
+class ResetBody(BaseModel):
+    # demo: close scenario-generated live data and keep history. full: delete every detection,
+    # incident and run and restore node and station status (seeded data is kept).
+    scope: Literal["demo", "full"] = "demo"
 
 
 def build_router(settings: Settings, engine: ScenarioEngine | None) -> APIRouter:
@@ -77,6 +86,7 @@ def build_router(settings: Settings, engine: ScenarioEngine | None) -> APIRouter
                     if engine.delay_override_s is not None
                     else scenario.trigger_after_seconds,
                     "expected_behavior": scenario.expected_behavior,
+                    "category": scenario.category,
                     "latest_run": scenario_run_json(latest),
                 }
             )
@@ -84,17 +94,21 @@ def build_router(settings: Settings, engine: ScenarioEngine | None) -> APIRouter
             "enabled": True,
             "server_time": utc_now().isoformat(),
             "disclaimer": DISCLAIMER,
+            "max_delay_s": settings.scenario_max_delay_s,
             "items": items,
         }
 
     @router.post("/scenarios/reset")
-    def reset(session: DbSession, request: Request):
+    def reset(session: DbSession, request: Request, body: ResetBody | None = None):
         if engine is None:
             return disabled()
         if denied := operator_error(request, settings):
             return denied
+        scope = (body or ResetBody()).scope
         try:
-            return operations.reset_scenario_data(session)
+            if scope == "full":
+                return {"scope": "full", **operations.full_reset(session)}
+            return {"scope": "demo", **operations.reset_scenario_data(session)}
         except OperationError as exc:
             return error_response(exc.status, exc.code, exc.message)
 
@@ -107,7 +121,8 @@ def build_router(settings: Settings, engine: ScenarioEngine | None) -> APIRouter
         if denied := operator_error(request, settings):
             return denied
         try:
-            run = engine.start(session, scenario_id, (body or StartBody()).operator)
+            body = body or StartBody()
+            run = engine.start(session, scenario_id, body.operator, body.delay_s)
         except ScenarioError as exc:
             return error_response(exc.status, exc.code, exc.message)
         return scenario_run_json(run)

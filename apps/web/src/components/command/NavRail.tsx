@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { PRODUCT_NAME } from "@/lib/config";
 
 import { Icon, type IconName } from "../icons";
@@ -40,12 +42,16 @@ export function NavRail({
 }) {
   return (
     <nav aria-label="Primary" className="flex w-[72px] shrink-0 flex-col items-center gap-1 border-r border-line bg-surface py-3">
-      <div className="mb-3 grid justify-items-center gap-1" title="Detect earlier. Verify faster. Respond smarter.">
+      <Link
+        href="/"
+        className={`mb-3 grid justify-items-center gap-1 rounded-lg p-1 ${FOCUS}`}
+        title="Detect earlier. Verify faster. Respond smarter. (Back to the product page)"
+      >
         <span className="grid h-9 w-9 place-items-center rounded-lg bg-navy text-white">
           <Icon name="radar" size={20} />
         </span>
         <span className="text-xs font-semibold tracking-tight">{PRODUCT_NAME}</span>
-      </div>
+      </Link>
       {ITEMS.map((item) => (
         <button
           key={item.id}

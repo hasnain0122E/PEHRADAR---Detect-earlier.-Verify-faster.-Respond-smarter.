@@ -112,11 +112,15 @@ The live URLs and verification results are recorded in `Tracker.md`. No producti
 | Env `CORS_ORIGINS` | **Leave unset** until the Vercel URL exists, then set `https://<your-vercel-domain>` |
 | Env `SCENARIOS_ENABLED` | M5: `true` to enable the demo scenario engine. It is **off in production when unset**. |
 | Env `ROUTING_PROVIDER` | M5: `osrm` (default; public OSRM demo server, light use) or `none` |
-| Env `SCENARIO_DELAY_OVERRIDE_S` | M5, optional: one trigger delay for every scenario (for example `20`); unset keeps 20–45 s per scenario |
+| Env `SCENARIO_DELAY_OVERRIDE_S` | M5, optional: one trigger delay for every scenario. Unset keeps the configured 6 s (M6B). The console also sends its own per-run delay (Settings › Scenario delay, default 5 s) |
+| Env `SCENARIO_MAX_DELAY_S` | M6B, optional: longest per-run delay the console may request (default `300`) |
+| Env `INCIDENT_MERGE_WINDOW_MIN` | M6B, optional: a confirmed detection from the same camera and event type within this many minutes of an open incident joins it instead of creating a new one (default `30`; `0` disables merging) |
 
 - Render detects uv because `apps/api/uv.lock` exists.
 - `--no-dev` and `--no-sync` keep pytest and ruff out of production. Plain `uv run` would install the dev group at startup.
 - With `APP_ENV=production` and `CORS_ORIGINS` unset, the API serves direct requests (curl, opening the URL in a browser) but **allows no cross-origin browser calls**. A wildcard is never used. Production also requires `https://` origins and disables `/api/v1/docs`.
+- M6B adds migration `0003` (camera `feed_meta`, `detection_merged` timeline event); the start command's `alembic upgrade head` applies it, and the seed then assigns the Pakistan-based demo feeds to 156 nodes. The demo clips live in `apps/api/demo_assets/` (committed; see `SOURCES.md`).
+- The web app now serves the landing page at `/` and the command center at `/monitor`.
 - `/` returns 404 by design. The public check URL is `https://<service>.onrender.com/api/v1/health`.
 
 ### Web on Vercel (after the API is live)

@@ -34,6 +34,34 @@ html {
   color-scheme: light;
 }
 
+/* M6B dark theme: same roles, inverted surfaces. Set by the theme preference (data-theme). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --color-canvas: #0b0d11;
+  --color-surface: #13161c;
+  --color-muted: #1b1f27;
+  --color-fg: #e9ebef;
+  --color-fg-2: #9aa3b2;
+  --color-fg-3: #6b7486;
+  --color-line: #252a33;
+  --color-line-strong: #353c48;
+  --color-navy: #3a4659;
+
+  --color-info: #4f8bff;
+  --color-info-soft: #16213a;
+  --color-ok: #22b573;
+  --color-ok-ink: #4ed39a;
+  --color-ok-soft: #10261c;
+  --color-warn: #f5a524;
+  --color-warn-ink: #f7c15c;
+  --color-warn-soft: #2a2110;
+  --color-fire: #f05257;
+  --color-fire-ink: #ff7b7f;
+  --color-fire-soft: #2d1416;
+
+  --shadow-float: 0 1px 2px rgb(0 0 0 / 0.4), 0 10px 28px rgb(0 0 0 / 0.45);
+}
+
 body {
   background: var(--color-canvas);
   color: var(--color-fg);
@@ -151,21 +179,35 @@ body {
   display: block;
 }
 
-/* Fire station: rounded square in restrained green. Unavailable = grey dashed + ×. */
+/* Feed camera: a small live dot on the camera disc. */
+.pr-live {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-ok);
+  border: 1.5px solid var(--color-surface);
+}
+
+/* Fire station: solid rounded square with a fire-station glyph. Unavailable = dashed grey + ×. */
 .pr-station {
   display: grid;
   place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-ok);
-  color: var(--color-ok-ink);
-  box-shadow: 0 1px 2px rgb(16 24 40 / 0.12);
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: var(--color-ok);
+  border: 1.5px solid #fff;
+  color: #fff;
+  box-shadow: 0 1px 3px rgb(16 24 40 / 0.25);
 }
 .pr-marker-station.is-unavailable .pr-station {
+  background: var(--color-surface);
   border: 1.5px dashed var(--color-fg-3);
   color: var(--color-fg-3);
+  box-shadow: none;
 }
 .pr-x {
   position: absolute;
@@ -175,37 +217,45 @@ body {
   font: 700 12px/1 var(--font-sans);
 }
 .pr-marker-station.is-candidate .pr-station {
-  width: 28px;
-  height: 28px;
-  background: var(--color-ok);
-  border-color: var(--color-ok);
-  color: #fff;
-  box-shadow: 0 0 0 4px rgb(22 163 106 / 0.18);
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 4px rgb(22 163 106 / 0.22), 0 2px 6px rgb(16 24 40 / 0.25);
 }
 .pr-marker-station.is-selected .pr-station {
-  box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--color-info);
+  box-shadow: 0 0 0 3px var(--color-surface), 0 0 0 5px var(--color-info);
 }
 
-/* Incident: the one visually dominant element. Red disc with a flame and a slow pulse. */
+/* Incident: the one dominant element. An anchored map pin with a fire or smoke glyph. */
+.pr-marker-incident {
+  min-width: 44px;
+  min-height: 52px;
+  align-items: end;
+  padding-bottom: 7px;
+}
 .pr-incident {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
   background: var(--color-fire);
   border: 2px solid #fff;
   color: #fff;
-  box-shadow: 0 2px 8px rgb(229 72 77 / 0.45);
+  box-shadow: -2px 2px 8px rgb(229 72 77 / 0.45);
 }
-.pr-marker-incident {
-  min-width: 40px;
-  min-height: 40px;
+.pr-incident-glyph {
+  display: grid;
+  transform: rotate(45deg);
 }
 .pr-marker-incident:not(.is-closed)::before {
   content: "";
   position: absolute;
-  inset: 0;
+  top: 2px;
+  left: calc(50% - 20px);
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: rgb(229 72 77 / 0.25);
   animation: pr-pulse 2.2s ease-out infinite;
@@ -217,11 +267,23 @@ body {
   background: var(--color-warn);
 }
 .pr-marker-incident.is-closed .pr-incident {
+  width: 28px;
+  height: 28px;
   background: var(--color-fg-3);
   box-shadow: none;
 }
+.pr-marker-incident.is-closed:not(.is-selected) {
+  opacity: 0.85;
+}
 .pr-marker-incident.is-selected .pr-incident {
-  box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--color-fire);
+  box-shadow: 0 0 0 3px var(--color-surface), 0 0 0 5px var(--color-fire);
+}
+.pr-marker-incident.is-closed .pr-label {
+  display: none;
+}
+.pr-marker-incident.is-closed:hover .pr-label,
+.pr-marker-incident.is-closed.is-selected .pr-label {
+  display: block;
 }
 
 .ops-map.hide-cameras .pr-marker-camera,
@@ -289,6 +351,29 @@ body {
   color: var(--color-fg);
   font: 600 10px/1 var(--font-sans);
 }
+.legend-pin {
+  width: 13px;
+  height: 13px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--color-fire);
+}
+.legend-pin.is-closed {
+  background: var(--color-fg-3);
+}
+.legend-dot.is-live {
+  background: var(--color-ok);
+  box-shadow: none;
+  border-color: var(--color-surface);
+}
+.legend-station {
+  background: var(--color-ok) !important;
+  border-color: var(--color-ok) !important;
+}
+.legend-station.is-unavailable {
+  background: var(--color-surface) !important;
+  border: 1.5px dashed var(--color-fg-3) !important;
+}
 .legend-route {
   width: 18px;
   height: 4px;
@@ -317,9 +402,9 @@ body {
   }
 }
 
-/* MapLibre attribution in the light theme. */
+/* MapLibre attribution, following the theme. */
 .maplibregl-ctrl-attrib {
-  background: rgb(255 255 255 / 0.85) !important;
+  background: color-mix(in srgb, var(--color-surface) 85%, transparent) !important;
   color: var(--color-fg-2);
   font-size: 11px;
 }
@@ -421,4 +506,41 @@ details > summary::-webkit-details-marker {
 }
 details[open] > summary .pr-chevron {
   transform: rotate(90deg);
+}
+
+/* Landing hero illustration (M6B). */
+@keyframes pr-hero-sweep {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.pr-hero-sweep {
+  animation: pr-hero-sweep 6s linear infinite;
+}
+@keyframes pr-hero-pulse {
+  0% {
+    transform: scale(0.6);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+.pr-hero-pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: pr-hero-pulse 2.2s ease-out infinite;
+}
+@keyframes pr-hero-route {
+  from {
+    stroke-dashoffset: 160;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.pr-hero-route {
+  stroke-dasharray: 160;
+  animation: pr-hero-route 2.4s ease-out 0.6s both;
 }

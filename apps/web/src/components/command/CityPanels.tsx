@@ -7,7 +7,7 @@ import { type ActivityEntry, type CityStats, isLiveRun } from "@/lib/city";
 import { pktTime } from "@/lib/ops";
 
 import { Icon } from "../icons";
-import { BUTTON_PRIMARY, BUTTON_SECONDARY, FOCUS, InlineError, Modal } from "./ui";
+import { BUTTON_PRIMARY, BUTTON_SECONDARY, FOCUS, InlineError, Modal, Tag } from "./ui";
 import type { ScenarioState } from "./useScenarios";
 import { describeError } from "./useOpsData";
 
@@ -73,12 +73,23 @@ export function liveScenarioLabel(state: ScenarioState): string | null {
   return `${live.name} · ${live.latest_run?.status === "scheduled" ? "armed" : "analysing feed"}`;
 }
 
+const CATEGORY: Record<NonNullable<Scenario["category"]>, { label: string; tone: string }> = {
+  fire: { label: "Fire", tone: "bg-fire-soft text-fire-ink" },
+  smoke: { label: "Smoke", tone: "bg-warn-soft text-warn-ink" },
+  false_alarm: { label: "False alarm", tone: "bg-muted text-fg-2" },
+  interior: { label: "Interior", tone: "bg-info-soft text-info" },
+  roadway: { label: "Roadway", tone: "bg-info-soft text-info" },
+};
+
 export function ScenarioControls({
   state,
   onStart,
   onReset,
   onOpenCamera,
+  delayS,
 }: {
+  /** Delay the next run will use (Settings), shown instead of the configured default. */
+  delayS?: number;
   state: ScenarioState;
   onStart: (id: string) => Promise<unknown>;
   onReset: () => Promise<unknown>;
@@ -123,7 +134,10 @@ export function ScenarioControls({
           return (
             <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
               <div className="grid min-w-0 gap-0.5">
-                <p className="truncate text-sm font-medium">{s.name}</p>
+                <p className="flex min-w-0 items-center gap-2">
+                  <span className="truncate text-sm font-medium">{s.name}</span>
+                  {s.category && <Tag tone={CATEGORY[s.category].tone}>{CATEGORY[s.category].label}</Tag>}
+                </p>
                 <p className="flex flex-wrap items-center gap-x-2 text-[13px] text-fg-2">
                   <button
                     type="button"
@@ -138,7 +152,7 @@ export function ScenarioControls({
                       {left && <span className="ml-1 tabular-nums">{left}</span>}
                     </span>
                   ) : (
-                    <span>· triggers after {s.trigger_after_seconds} s</span>
+                    <span>· runs {delayS ?? s.trigger_after_seconds} s after start</span>
                   )}
                 </p>
               </div>
@@ -162,7 +176,7 @@ export function ScenarioControls({
       <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
         {armedReset ? (
           <>
-            <p className="text-[13px] text-fg-2">Close all scenario data?</p>
+            <p className="text-[13px] text-fg-2">Close demo alerts and incidents?</p>
             <div className="flex gap-2">
               <button type="button" className={`${BUTTON_SECONDARY} h-8`} onClick={() => setArmedReset(false)}>
                 Cancel
@@ -173,16 +187,16 @@ export function ScenarioControls({
                 disabled={busy !== null}
                 onClick={() => void perform("reset", onReset)}
               >
-                {busy === "reset" ? "Resetting…" : "Yes, reset demo"}
+                {busy === "reset" ? "Resetting…" : "Yes, reset operations"}
               </button>
             </div>
           </>
         ) : (
           <>
-            <p className="text-[13px] text-fg-2">Reset closes scenario data without deleting it.</p>
+            <p className="text-[13px] text-fg-2">Clears the live map; history is kept. Full reset is in Settings.</p>
             <button type="button" className={`${BUTTON_SECONDARY} h-8`} onClick={() => setArmedReset(true)}>
               <Icon name="reset" size={14} />
-              Reset demo
+              Reset operations
             </button>
           </>
         )}
@@ -198,7 +212,9 @@ export function DemoDialog({
   onStart,
   onReset,
   onOpenCamera,
+  delayS,
 }: {
+  delayS?: number;
   state: ScenarioState;
   onClose: () => void;
   onStart: (id: string) => Promise<unknown>;
@@ -206,9 +222,10 @@ export function DemoDialog({
   onOpenCamera: (cameraId: string) => void;
 }) {
   return (
-    <Modal title="Demo scenarios" onClose={onClose} width="max-w-[480px]">
+    <Modal title="Demo scenarios" onClose={onClose} width="max-w-[560px]">
       <ScenarioControls
         state={state}
+        delayS={delayS}
         onStart={async (id) => {
           await onStart(id);
           onClose(); // the scenario runs autonomously; the map shows what happens

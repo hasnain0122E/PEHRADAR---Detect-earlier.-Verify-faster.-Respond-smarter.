@@ -44,6 +44,7 @@ def camera_json(c: Camera) -> dict:
         "stream_type": c.stream_type,
         "stream_url": c.stream_url,
         "monitoring_status": monitoring_status(c),
+        "feed": c.feed_meta,
         "created_at": _ts(c.created_at),
     }
 

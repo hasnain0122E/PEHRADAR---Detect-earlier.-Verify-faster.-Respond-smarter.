@@ -292,7 +292,15 @@ export function Timeline({ events }: { events: TimelineEvent[] }) {
   );
 }
 
-export function StationPanel({ station }: { station: FireStation }) {
+export function StationPanel({
+  station,
+  onSetStatus,
+}: {
+  station: FireStation;
+  /** M6B demo toggle: availability changes which station new incidents suggest. */
+  onSetStatus?: (status: "available" | "unavailable") => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
   const osm = station.source_ref?.match(/^osm:(node|way|relation)\/(\d+)$/);
   const available = station.status === "available";
   return (
@@ -308,6 +316,25 @@ export function StationPanel({ station }: { station: FireStation }) {
             {available ? "Available" : "Unavailable"}
           </Tag>
           <span className="text-[13px] text-fg-2">{FACILITY_LABEL[station.facility_type]}</span>
+          {onSetStatus && (
+            <button
+              type="button"
+              disabled={busy}
+              title="Demo availability flag: changes which station new incidents suggest"
+              onClick={async () => {
+                setBusy(true);
+                try {
+                  await onSetStatus(available ? "unavailable" : "available");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              className={`ml-auto inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-fg-2 hover:bg-muted hover:text-fg disabled:opacity-40 ${FOCUS}`}
+            >
+              <Icon name="power" size={14} />
+              {busy ? "Updating…" : available ? "Mark unavailable" : "Mark available"}
+            </button>
+          )}
         </div>
       </header>
       <Facts

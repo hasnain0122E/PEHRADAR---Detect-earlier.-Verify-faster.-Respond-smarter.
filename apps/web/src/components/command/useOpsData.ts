@@ -33,8 +33,9 @@ export function describeError(err: unknown, fallback: string): string {
 }
 
 /**
- * Cameras and stations load once (they change only through the seed). Incidents and pending
- * detections are polled every POLL_MS and reloaded on demand after operator actions.
+ * Cameras and stations load once and again on demand (`refresh({ statics: true })`) after a
+ * demo status change (M6B network simulation, station availability, full reset). Incidents and
+ * pending detections are polled every POLL_MS and reloaded on demand after operator actions.
  */
 export function useOpsData(
   api: OpsApi,
@@ -48,13 +49,13 @@ export function useOpsData(
   const haveStatic = useRef(false);
   const inFlight = useRef<AbortController | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (options?: { statics?: boolean }) => {
     inFlight.current?.abort();
     const controller = new AbortController();
     inFlight.current = controller;
     const { signal } = controller;
     try {
-      const staticLoad = haveStatic.current
+      const staticLoad = haveStatic.current && !options?.statics
         ? null
         : Promise.all([api.listCameras(signal), api.listStations(signal)]);
       const [incidents, pending, statics] = await Promise.all([

@@ -50,6 +50,8 @@ interface CameraPanelProps {
   lastActivity: string | null;
   /** Demo scenario on this node: name and run state, if one is configured. */
   scenarioNote: string | null;
+  /** M6B network simulation: take this node offline or bring it back. */
+  onSetStatus?: (status: "active" | "offline") => Promise<void>;
 }
 
 export function SourceBadge({ camera }: { camera: Camera }) {
@@ -80,6 +82,7 @@ export function CameraPanel(props: CameraPanelProps) {
             {active ? "Online" : camera.status}
           </span>
           <SourceBadge camera={camera} />
+          {props.onSetStatus && <NodeToggle active={active} onSetStatus={props.onSetStatus} />}
         </div>
       </header>
 
@@ -114,7 +117,32 @@ export function CameraPanel(props: CameraPanelProps) {
         ]}
       />
 
-      {camera.source_reference && <Note>{camera.source_reference}</Note>}
+      {camera.feed ? (
+        <Disclosure summary="Feed source">
+          <Facts
+            rows={[
+              ["Footage", camera.feed.title],
+              ["Recorded in", `${camera.feed.city}, ${camera.feed.country}`],
+              ["Context", camera.feed.context],
+              [
+                "Licence",
+                camera.feed.source_url ? (
+                  <a key="l" className="text-info underline-offset-2 hover:underline" href={camera.feed.source_url} target="_blank" rel="noreferrer">
+                    {camera.feed.licence}
+                    {camera.feed.attribution ? ` · ${camera.feed.attribution}` : ""}
+                  </a>
+                ) : (
+                  camera.feed.licence
+                ),
+              ],
+              ["Loop starts at", `${camera.feed.start_offset_s.toFixed(1)} s`],
+            ]}
+          />
+          <p className="text-xs text-fg-3">{camera.feed.licence_note}</p>
+        </Disclosure>
+      ) : (
+        camera.source_reference && <Note>{camera.source_reference}</Note>
+      )}
       {props.scenarioNote && <Note icon="play">{props.scenarioNote}</Note>}
 
       <Disclosure
@@ -148,6 +176,35 @@ export function CameraPanel(props: CameraPanelProps) {
         )}
       </Disclosure>
     </div>
+  );
+}
+
+function NodeToggle({
+  active,
+  onSetStatus,
+}: {
+  active: boolean;
+  onSetStatus: (status: "active" | "offline") => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button
+      type="button"
+      disabled={busy}
+      title="Network simulation: changes the demo status of this node only"
+      onClick={async () => {
+        setBusy(true);
+        try {
+          await onSetStatus(active ? "offline" : "active");
+        } finally {
+          setBusy(false);
+        }
+      }}
+      className={`ml-auto inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-fg-2 hover:bg-muted hover:text-fg disabled:opacity-40 ${FOCUS}`}
+    >
+      <Icon name="power" size={14} />
+      {busy ? "Updating…" : active ? "Simulate offline" : "Bring online"}
+    </button>
   );
 }
 

@@ -16,7 +16,17 @@ import { Icon } from "../icons";
  */
 
 export type FeedMode =
-  | { kind: "video"; src: string; loop: boolean; label: string; note: string }
+  | {
+      kind: "video";
+      src: string;
+      loop: boolean;
+      label: string;
+      note: string;
+      /** M6B: where this node's loop starts, so nodes sharing a clip look different. */
+      startAt?: number;
+      /** M6B: second overlay tag, e.g. "Pakistan-based demo footage · Peshawar". */
+      provenance?: string;
+    }
   | { kind: "hls"; src: string; label: string; note: string }
   | { kind: "mjpeg"; src: string; label: string; note: string }
   | { kind: "none"; reason: string };
@@ -51,13 +61,24 @@ export function feedMode(
             : FEED_UNAVAILABLE,
     };
   }
+  const feed = camera.feed;
   const note =
     camera.source_type === "public_live"
       ? "Publicly viewable stream"
-      : "Licensed sample footage looped on a simulated node. Not Karachi CCTV.";
+      : feed
+        ? `${feed.title}: ${feed.context}. Recorded in ${feed.city}, Pakistan, not at this location. Looped on a simulated node; not CCTV.`
+        : "Licensed sample footage looped on a simulated node. Not Karachi CCTV.";
   switch (camera.stream_type) {
     case "mp4_loop":
-      return { kind: "video", src, loop: true, label, note };
+      return {
+        kind: "video",
+        src,
+        loop: true,
+        label,
+        note,
+        startAt: feed?.start_offset_s,
+        provenance: feed ? `Pakistan-based demo footage · ${feed.city}` : undefined,
+      };
     case "hls":
       return { kind: "hls", src, label, note };
     case "mjpeg":
@@ -128,11 +149,21 @@ export function CameraFeed({
             aria-label={`${mode.label}: ${camera.name}`}
             className="h-full w-full object-cover"
             onError={() => fail("Feed could not be loaded")}
+            onLoadedMetadata={(e) => {
+              const start = mode.kind === "video" ? mode.startAt : undefined;
+              const el = e.currentTarget;
+              if (start && start < el.duration) el.currentTime = start;
+            }}
           />
         )}
         {mode.kind !== "none" && !error && (
           <span className={`pr-feed-tag absolute top-3 left-3 ${mode.label.startsWith("PUBLIC") ? "is-public" : ""}`}>
             <span aria-hidden className="pr-feed-dot" /> {mode.label}
+          </span>
+        )}
+        {mode.kind === "video" && mode.provenance && !error && (
+          <span className="pr-feed-tag absolute bottom-3 left-3 font-medium tracking-normal normal-case">
+            {mode.provenance}
           </span>
         )}
       </div>

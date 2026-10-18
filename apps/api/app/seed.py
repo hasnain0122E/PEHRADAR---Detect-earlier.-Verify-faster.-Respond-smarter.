@@ -58,6 +58,8 @@ def seed(session: Session, data: dict | None = None) -> dict[str, int]:
         else:
             camera.stream_url = None
         camera.is_simulated = camera.source_type in ("simulated_coverage", "demo_stream")
+        # M6B: provenance of the Pakistan-based demo footage (seed/feed_library.json).
+        camera.feed_meta = row.get("feed") if camera.source_type == "demo_stream" else None
     for row in data["fire_stations"]:
         station = session.get(FireStation, seed_id(row["code"]))
         if station is None:

@@ -39,6 +39,7 @@ export type TimelineEventType =
   | "no_station_available"
   | "route_generated"
   | "route_unavailable"
+  | "detection_merged"
   | "status_changed"
   | "resolved"
   | "rejected";
@@ -61,7 +62,26 @@ export interface Camera {
   /** API-relative for demo loops (/api/v1/media/...), absolute only for public_live. */
   stream_url: string | null;
   monitoring_status: MonitoringStatus;
+  /** M6B: provenance of the demo footage on a demo_stream node; null elsewhere. */
+  feed?: FeedMeta | null;
   created_at: string | null;
+}
+
+/** seed/feed_library.json entry as assigned to one node. Demo footage, never Karachi CCTV. */
+export interface FeedMeta {
+  asset: string;
+  title: string;
+  country: string;
+  city: string;
+  context: string;
+  source_type: "licensed_sample" | "pakistan_demo_footage";
+  is_demo_feed: true;
+  /** Seconds into the clip where this node's loop starts, so shared clips look different. */
+  start_offset_s: number;
+  source_url: string | null;
+  licence: string;
+  licence_note: string;
+  attribution: string | null;
 }
 
 export interface FireStation {
@@ -261,6 +281,8 @@ export interface ScenarioResult {
   model: string;
   rule: string;
   classes: Record<string, { confirmed: boolean; peak_confidence: number; positive_frames: number }>;
+  /** M6B: the detection joined a pending one on the same camera instead of raising a new alert. */
+  merged_into_pending?: string;
 }
 
 export interface ScenarioRun {
@@ -289,6 +311,8 @@ export interface Scenario {
   video_asset: string;
   trigger_after_seconds: number;
   expected_behavior: "fire_detected" | "smoke_detected" | "no_detection";
+  /** M6B scenario family shown in the demo dialog. */
+  category?: "fire" | "smoke" | "false_alarm" | "interior" | "roadway";
   latest_run: ScenarioRun | null;
 }
 
@@ -296,11 +320,21 @@ export interface ScenarioList {
   enabled: boolean;
   server_time: string;
   disclaimer?: string;
+  /** Longest per-run delay the server accepts (seconds). */
+  max_delay_s?: number;
   items: Scenario[];
 }
 
-export interface ResetResult {
-  runs_cancelled: number;
-  detections_closed: number;
-  incidents_closed: number;
-}
+export type ResetScope = "demo" | "full";
+
+export type ResetResult =
+  | { scope?: "demo"; runs_cancelled: number; detections_closed: number; incidents_closed: number }
+  | {
+      scope: "full";
+      timeline_events_deleted: number;
+      incidents_deleted: number;
+      scenario_runs_deleted: number;
+      detections_deleted: number;
+      cameras_restored: number;
+      stations_restored: number;
+    };

@@ -79,6 +79,9 @@ class Camera(Base):
     stream_type: Mapped[str] = mapped_column(String(20), default="none")
     stream_url: Mapped[str | None] = mapped_column(String(500))
     feed_asset: Mapped[str | None] = mapped_column(String(80))
+    # M6B demo feed provenance (seed/feed_library.json): country, city, context, licence note,
+    # loop start offset. Only set on demo_stream nodes; never describes a real CCTV stream.
+    feed_meta: Mapped[dict | None] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utc_now, onupdate=utc_now)
 

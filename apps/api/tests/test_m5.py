@@ -130,7 +130,8 @@ def test_m5_migration_keeps_existing_m3_rows_and_seed_fills_provenance(tmp_path)
         seed(session)
         camera = session.get(Camera, KORANGI)
         assert camera.source_type == "demo_stream"
-        assert camera.stream_url == "/api/v1/media/street_sunset_traffic.mp4"
+        assert camera.stream_url.startswith("/api/v1/media/pk_")  # M6B Pakistan demo footage
+        assert camera.feed_meta["country"] == "Pakistan"
         # The operator's demo toggle survives the seed.
         assert session.get(FireStation, seed_id("KHI-FS-03")).status == "unavailable"
     app.state.engine.dispose()
@@ -176,7 +177,8 @@ def test_every_camera_declares_provenance(tmp_path):
     assert mapped["source_reference"].startswith("osm:node/")
     assert mapped["monitoring_status"] == "not_connected"
     # M3 camera ids are unchanged, so existing detections keep their camera.
-    assert {c["code"] for c in by_type["demo_stream"]} == {"KHI-CAM-02", "KHI-CAM-03", "KHI-CAM-07"}
+    # M6B: most simulated nodes loop Pakistan-based demo footage; the M5 scenario nodes still do.
+    assert {"KHI-CAM-02", "KHI-CAM-03", "KHI-CAM-07"} <= {c["code"] for c in by_type["demo_stream"]}
     assert next(c for c in items if c["code"] == "KHI-CAM-03")["id"] == KORANGI
 
 
@@ -342,7 +344,12 @@ def test_reset_cancels_runs_and_closes_only_scenario_data(tmp_path, clip):  # no
 
     result = client.post(f"{API}/scenarios/reset", headers=AUTH).json()
 
-    assert result == {"runs_cancelled": 1, "detections_closed": 0, "incidents_closed": 1}
+    assert result == {
+        "scope": "demo",
+        "runs_cancelled": 1,
+        "detections_closed": 0,
+        "incidents_closed": 1,
+    }
     incident = client.get(f"{API}/incidents/{incident_id}").json()
     assert incident["status"] == "resolved"
     assert incident["timeline"][-1]["actor_label"] == "Demo reset"

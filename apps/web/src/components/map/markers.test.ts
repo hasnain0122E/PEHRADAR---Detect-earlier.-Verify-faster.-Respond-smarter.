@@ -25,7 +25,10 @@ const byKey = (specs: ReturnType<typeof buildMarkers>, key: string) =>
 
 describe("buildMarkers", () => {
   it("uses coordinates from the API data", () => {
-    const korangi = byKey(buildMarkers(base), `camera:${CAMERA_KORANGI.id}`);
+    const korangi = byKey(
+      buildMarkers({ ...base, selection: { kind: "camera", id: CAMERA_KORANGI.id } }),
+      `camera:${CAMERA_KORANGI.id}`,
+    );
     expect([korangi.lng, korangi.lat]).toEqual([CAMERA_KORANGI.longitude, CAMERA_KORANGI.latitude]);
   });
 
@@ -41,7 +44,9 @@ describe("buildMarkers", () => {
     expect(korangi.className.split(" ")).toEqual(
       expect.arrayContaining(["is-pending", "has-incident", "is-analyzing", "is-selected"]),
     );
-    expect(korangi.html).toContain('class="pr-badge"');
+    // One pending detection: the exclamation glyph, no count badge (the badge appears from 2).
+    expect(korangi.html).not.toContain('class="pr-badge"');
+    expect(korangi.html).toContain('<path d="M12 6v7"/>');
     expect(korangi.label).toMatch(/1 detection awaiting review, active incident, analyzing footage/);
     // A quiet simulated node is not an HTML marker: it lives in the clustered layer.
     expect(byKey(specs, `camera:${CAMERA_SADDAR.id}`)).toBeUndefined();
@@ -73,6 +78,16 @@ describe("buildMarkers", () => {
     expect(byKey(specs, `station:${STATION_LANDHI.id}`).className).toContain("is-candidate");
   });
 
+  it("draws closed incidents as history pins only when the history layer is on", () => {
+    const resolved = { ...INCIDENT, id: "closed", status: "resolved" as const };
+    const specs = buildMarkers({ ...base, incidents: [INCIDENT, resolved], showClosed: true });
+    const closed = byKey(specs, "incident:closed");
+    expect(closed.className).toContain("is-closed");
+    expect(closed.label).toMatch(/^Closed incident/);
+    expect(closed.anchor).toBe("bottom");
+    expect(byKey(specs, `incident:${INCIDENT.id}`).z).toBeGreaterThan(closed.z);
+  });
+
   it("escapes camera names placed in marker HTML", () => {
     const hostile = { ...CAMERA_SADDAR, name: '<img src=x onerror="alert(1)">' };
     const spec = byKey(
@@ -86,13 +101,23 @@ describe("buildMarkers", () => {
 describe("cameraFeatures (clustered layer)", () => {
   const input: MarkerInput = { ...base, cameras: [CAMERA_SADDAR, CAMERA_KORANGI, CAMERA_MAPPED] };
 
-  it("puts quiet coverage and mapped nodes in the GeoJSON layer, never feed nodes", () => {
+  it("clusters every quiet node, including demo-feed nodes, and flags which ones have a feed", () => {
     const fc = cameraFeatures(input);
-    expect(fc.features.map((f) => f.properties.code)).toEqual(["KHI-CAM-01", "KHI-OSM-001"]);
+    expect(fc.features.map((f) => f.properties.code)).toEqual(["KHI-CAM-01", "KHI-CAM-03", "KHI-OSM-001"]);
     expect(fc.features[0].geometry.coordinates).toEqual([CAMERA_SADDAR.longitude, CAMERA_SADDAR.latitude]);
-    expect(fc.features[1].properties.source_type).toBe("verified_mapped");
-    const html = buildMarkers(input).filter((m) => m.select.kind === "camera").map((m) => m.select.id);
-    expect(html).toEqual([CAMERA_KORANGI.id]); // demo-stream node: always individual
+    expect(fc.features.map((f) => f.properties.feed)).toEqual([false, true, false]);
+    expect(fc.features[2].properties.source_type).toBe("verified_mapped");
+    const html = buildMarkers(input).filter((m) => m.select.kind === "camera");
+    expect(html).toEqual([]);
+  });
+
+  it("marks a selected feed camera with the live dot", () => {
+    const spec = byKey(
+      buildMarkers({ ...input, selection: { kind: "camera", id: CAMERA_KORANGI.id } }),
+      `camera:${CAMERA_KORANGI.id}`,
+    );
+    expect(spec.className).toContain("has-feed");
+    expect(spec.html).toContain('class="pr-live"');
   });
 
   it("lifts a camera out of its cluster while it has an alert, an incident or the selection", () => {

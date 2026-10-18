@@ -94,6 +94,8 @@ def create_app(
             sample_fps=settings.video_sample_fps,
             max_seconds=settings.video_max_seconds,
             delay_override_s=settings.scenario_delay_override_s,
+            max_delay_s=settings.scenario_max_delay_s,
+            merge_window_min=settings.incident_merge_window_min,
         )
     app.state.scenario_engine = holder["engine"]
     app.include_router(scenarios.build_router(settings, holder["engine"]), prefix=API_PREFIX)
