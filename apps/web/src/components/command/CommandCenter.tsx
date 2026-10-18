@@ -3,16 +3,17 @@
 import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type { OpsApi } from "@/lib/api/client";
-import type { Camera, Detection, Incident, IncidentDetail, ResetScope, ResponseUnitKind, Scenario } from "@/lib/api/types";
+import type { Camera, Detection, Incident, IncidentDetail, ResetScope, ResponseUnitKind } from "@/lib/api/types";
 import { buildActivity, cityStats, isLiveRun, type LocalEvent } from "@/lib/city";
 import { confidencePct, isActiveIncident } from "@/lib/ops";
 import { usePreferences, useResolvedTheme } from "@/lib/preferences";
+import { scenarioFeedFor } from "@/lib/scenarioFeed";
 import { ALL_UNITS_VISIBLE, mapRoutes, responseUnits, routeOk, UNIT_VIEW } from "@/lib/response";
 
 import { Icon } from "../icons";
 import { boundsOf, type MapFocus, type MapView, OpsMap, type OpsMapProps, prefersReducedMotion } from "../map/OpsMap";
 import { useApiHealth } from "../useApiHealth";
-import { type FeedOverride, feedMode } from "./CameraFeed";
+import { feedMode } from "./CameraFeed";
 import { type AnalysisState, CameraPanel, isRunning } from "./CameraPanel";
 import { ActivityList, DemoDialog, liveScenarioLabel, StatusStrip } from "./CityPanels";
 import { DetectionReview } from "./DetectionReview";
@@ -41,17 +42,6 @@ const timestamp = () => Date.now();
 const isoNow = () => new Date().toISOString();
 const noopSubscribe = () => () => {};
 
-/** Scenario clip currently shown on a demo-stream node (after its trigger, until reset). */
-function scenarioOverride(scenarios: Scenario[], cameraId: string, mediaSrc: (u: string) => string | null): FeedOverride | null {
-  const s = scenarios.find((x) => x.camera_id === cameraId && x.latest_run?.triggered_at);
-  const run = s?.latest_run;
-  if (!s || !run || run.status === "cancelled" || run.status === "scheduled") return null;
-  const src = mediaSrc(run.video_url);
-  return src
-    ? { src, note: `Scenario clip “${s.name}”: licensed footage analysed by the real detector on a simulated node. Not Karachi CCTV.` }
-    : null;
-}
-
 const EVENT_WORD = { fire: "fire", smoke: "smoke", fire_smoke: "fire and smoke" } as const;
 
 export interface CommandCenterProps {
@@ -76,6 +66,14 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
   const view = viewChoice ?? (reducedMotion ? "2d" : prefs.defaultView);
   const [zone, setZone] = useState(ALL_ZONES);
   const [routeFor, setRouteFor] = useState<string | null>(null);
+  // Scenario feed override (hotfix): runs created before the last reset never take over a feed,
+  // and a clock tick lets a finished negative run hand the node back to its normal loop.
+  const [resetAtMs, setResetAtMs] = useState(0);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, []);
   // M6C: which suggested routes are drawn (all three by default when the response view opens).
   const [routeUnits, setRouteUnits] = useState<Record<ResponseUnitKind, boolean>>(ALL_UNITS_VISIBLE);
   const [analysis, setAnalysis] = useState<AnalysisState | null>(null);
@@ -165,6 +163,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
   const resetScenarios = useCallback(
     async (scope: ResetScope = "demo") => {
       const result = await resetScenarioData(scope);
+      setResetAtMs(timestamp() + scenarios.offsetMs); // scenario clips leave every camera now
       setAlerts([]);
       setRouteFor(null);
       setRouteUnits(ALL_UNITS_VISIBLE);
@@ -178,7 +177,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
       await refresh({ statics: scope === "full" });
       return result;
     },
-    [resetScenarioData, refresh],
+    [resetScenarioData, refresh, scenarios.offsetMs],
   );
 
   // Demo auto-start (Settings): arm the first fire scenario once per console session.
@@ -341,9 +340,19 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
     () => scenarios.items.filter((s) => s.latest_run?.status === "running" && s.camera_id).map((s) => s.camera_id!),
     [scenarios.items],
   );
-  const mediaSrc = (url: string) => api.mediaSrc(url);
+  // The viewer plays the scenario's own clip (the asset the detector analyses) while the run is
+  // armed, analysing, awaiting review or has an open incident; otherwise the node's normal feed.
   const feedFor = (camera: Camera) =>
-    feedMode(camera, (u) => api.mediaSrc(u), scenarioOverride(scenarios.items, camera.id, mediaSrc));
+    feedMode(
+      camera,
+      (u) => api.mediaSrc(u),
+      scenarioFeedFor(scenarios.items, camera.id, {
+        pending: data.pending,
+        incidents: data.incidents,
+        nowMs: nowMs + scenarios.offsetMs,
+        resetAtMs,
+      }),
+    );
   const lastActivityFor = (cameraId: string) => {
     const times = [
       ...data.pending.filter((d) => d.camera_id === cameraId).map((d) => d.detected_at),

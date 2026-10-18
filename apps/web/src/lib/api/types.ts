@@ -335,6 +335,12 @@ export interface Scenario {
   expected_behavior: "fire_detected" | "smoke_detected" | "no_detection";
   /** M6B scenario family shown in the demo dialog. */
   category?: "fire" | "smoke" | "false_alarm" | "interior" | "roadway";
+  /** Hotfix: the clip the camera viewer plays during the run (same asset the detector analyses). */
+  video_url?: string;
+  /** Deterministic viewer start, seconds into the clip. */
+  feed_start_s?: number;
+  /** Provenance shown in the viewer. */
+  footage?: { description: string; recorded_in: string; source: string } | null;
   latest_run: ScenarioRun | null;
 }
 

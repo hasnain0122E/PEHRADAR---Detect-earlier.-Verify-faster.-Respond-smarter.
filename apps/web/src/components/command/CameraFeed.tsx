@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { Camera } from "@/lib/api/types";
+import { INCIDENT_FEED_LABEL, INCIDENT_FEED_NOTE, type ScenarioFeed } from "@/lib/scenarioFeed";
 
 import { Icon } from "../icons";
 
@@ -11,8 +12,8 @@ import { Icon } from "../icons";
  * stream_type. Adding an authorised HLS/RTSP-to-HLS source later only means seeding a
  * `public_live` (or future `authorized`) node with its URL; no UI change.
  *
- * Labels never overstate provenance: demo footage is always "SIMULATED LIVE FEED", and only a
- * `public_live` node may say "PUBLIC LIVE FEED".
+ * Labels never overstate provenance: demo footage is always "SIMULATED LIVE FEED", scenario
+ * footage is "SIMULATED INCIDENT FEED", and only a `public_live` node may say "PUBLIC LIVE FEED".
  */
 
 export type FeedMode =
@@ -26,6 +27,8 @@ export type FeedMode =
       startAt?: number;
       /** M6B: second overlay tag, e.g. "Pakistan-based demo footage · Peshawar". */
       provenance?: string;
+      /** Hotfix: the scenario clip playing on this node (same asset the detector analyses). */
+      incident?: ScenarioFeed;
     }
   | { kind: "hls"; src: string; label: string; note: string }
   | { kind: "mjpeg"; src: string; label: string; note: string }
@@ -33,22 +36,31 @@ export type FeedMode =
 
 export const FEED_UNAVAILABLE = "Feed unavailable in hackathon environment";
 
-export interface FeedOverride {
-  /** Playable URL of the scenario clip currently on this node. */
-  src: string;
-  note: string;
-}
+/** The scenario clip temporarily replacing a node's feed (never stored on the camera). */
+export type FeedOverride = ScenarioFeed;
 
 export function feedMode(
   camera: Camera,
   resolve: (url: string | null) => string | null,
   override?: FeedOverride | null,
 ): FeedMode {
+  // A running scenario feeds this node: its clip plays even if the node was marked offline,
+  // so a valid scenario asset is never hidden behind "Camera offline".
+  // A lawful public stream is never replaced by demo footage.
+  const scenarioSrc = override && camera.source_type !== "public_live" ? resolve(override.videoUrl) : null;
+  if (override && scenarioSrc) {
+    return {
+      kind: "video",
+      src: scenarioSrc,
+      loop: true,
+      label: INCIDENT_FEED_LABEL,
+      note: INCIDENT_FEED_NOTE,
+      startAt: override.startAt,
+      incident: override,
+    };
+  }
   if (camera.status !== "active") return { kind: "none", reason: `Camera ${camera.status}` };
   const label = camera.source_type === "public_live" ? "PUBLIC LIVE FEED" : "SIMULATED LIVE FEED";
-  if (override && camera.source_type === "demo_stream") {
-    return { kind: "video", src: override.src, loop: true, label, note: override.note };
-  }
   const src = resolve(camera.stream_url);
   if (!src) {
     return {
@@ -101,22 +113,29 @@ export function CameraFeed({
   mode: FeedMode;
   compact?: boolean;
 }) {
-  const [failed, setFailed] = useState<string | null>(null);
-  const key = mode.kind === "none" ? "none" : mode.src;
-  const [failedKey, setFailedKey] = useState<string | null>(null);
-  const error = failedKey === key ? failed : null;
+  const [attempt, setAttempt] = useState(0);
+  const key = mode.kind === "none" ? "none" : `${mode.src}#${attempt}`;
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
+  const error = failure?.key === key ? failure.message : null;
+  const [blocked, setBlocked] = useState<string | null>(null); // key whose autoplay was refused
+  const [paused, setPaused] = useState(false);
   const video = useRef<HTMLVideoElement>(null);
+  const incident = mode.kind === "video" ? mode.incident : undefined;
 
-  // Autoplay is muted, so browsers allow it; retry once the element is ready.
+  // Muted autoplay is normally allowed; if the browser still refuses, offer a Play button.
   useEffect(() => {
     const el = video.current;
     if (!el) return;
-    el.play?.()?.catch(() => undefined);
+    el.play?.()?.catch(() => setBlocked(key));
   }, [key]);
 
-  const fail = (message: string) => {
-    setFailed(message);
-    setFailedKey(key);
+  const fail = (message: string) => setFailure({ key, message });
+  const play = () => {
+    const el = video.current;
+    if (!el) return;
+    el.play?.()
+      ?.then(() => setBlocked(null))
+      .catch(() => setBlocked(key));
   };
 
   return (
@@ -127,6 +146,15 @@ export function CameraFeed({
             <div className="grid justify-items-center gap-2">
               <Icon name="camera" size={22} className="text-fg-3" />
               <p className="text-[13px] text-fg-2">{error ?? (mode.kind === "none" ? mode.reason : "")}</p>
+              {error && (
+                <button
+                  type="button"
+                  onClick={() => setAttempt((n) => n + 1)}
+                  className="rounded-md border border-line bg-surface px-3 py-1 text-[13px] font-medium text-fg hover:bg-muted"
+                >
+                  Retry feed
+                </button>
+              )}
             </div>
           </div>
         ) : mode.kind === "mjpeg" ? (
@@ -145,10 +173,14 @@ export function CameraFeed({
             autoPlay
             playsInline
             loop={mode.kind === "video" ? mode.loop : false}
-            preload="auto"
+            // Only the selected camera's clip loads; incident footage buffers fully, idle loops
+            // start with metadata (autoplay then streams what it needs).
+            preload={incident ? "auto" : "metadata"}
             aria-label={`${mode.label}: ${camera.name}`}
             className="h-full w-full object-cover"
             onError={() => fail("Feed could not be loaded")}
+            onPlay={() => setPaused(false)}
+            onPause={() => setPaused(true)}
             onLoadedMetadata={(e) => {
               const start = mode.kind === "video" ? mode.startAt : undefined;
               const el = e.currentTarget;
@@ -157,7 +189,9 @@ export function CameraFeed({
           />
         )}
         {mode.kind !== "none" && !error && (
-          <span className={`pr-feed-tag absolute top-3 left-3 ${mode.label.startsWith("PUBLIC") ? "is-public" : ""}`}>
+          <span
+            className={`pr-feed-tag absolute top-3 left-3 ${mode.label.startsWith("PUBLIC") ? "is-public" : ""} ${incident ? "is-incident" : ""}`}
+          >
             <span aria-hidden className="pr-feed-dot" /> {mode.label}
           </span>
         )}
@@ -166,9 +200,43 @@ export function CameraFeed({
             {mode.provenance}
           </span>
         )}
+        {mode.kind !== "none" && mode.kind !== "mjpeg" && !error && blocked === key && (
+          <button
+            type="button"
+            onClick={play}
+            className="absolute inset-0 m-auto grid h-14 w-40 place-items-center rounded-xl bg-white/95 text-sm font-semibold text-[#111318] shadow-float"
+          >
+            <span className="flex items-center gap-2">
+              <Icon name="play" size={20} />
+              Play feed
+            </span>
+          </button>
+        )}
+        {mode.kind === "video" && !error && blocked !== key && (
+          <button
+            type="button"
+            aria-label={paused ? "Play feed" : "Pause feed"}
+            onClick={() => (paused ? play() : video.current?.pause())}
+            className="absolute right-3 bottom-3 grid h-8 w-8 place-items-center rounded-lg bg-black/55 text-white hover:bg-black/70"
+          >
+            <Icon name={paused ? "play" : "pause"} size={16} />
+          </button>
+        )}
       </div>
-      {mode.kind !== "none" && !error && !compact && (
-        <figcaption className="text-xs text-fg-3">{mode.note}</figcaption>
+      {incident && !error ? (
+        <figcaption className="grid gap-1 text-xs text-fg-2">
+          <span className="font-medium text-fg">{INCIDENT_FEED_NOTE}</span>
+          <span>
+            Scenario: <span className="text-fg">{incident.scenarioName}</span>
+          </span>
+          {incident.footage && (
+            <span>
+              {incident.footage.description} · Recorded in {incident.footage.recorded_in} · {incident.footage.source}
+            </span>
+          )}
+        </figcaption>
+      ) : (
+        mode.kind !== "none" && !error && !compact && <figcaption className="text-xs text-fg-3">{mode.note}</figcaption>
       )}
     </figure>
   );

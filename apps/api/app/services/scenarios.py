@@ -49,6 +49,10 @@ class Scenario:
     expected_behavior: str
     description: str
     category: str = "fire"
+    # Hotfix: where the camera viewer starts the clip (deterministic, near the incident sequence)
+    # and the provenance it shows. The detector always analyses the whole clip.
+    feed_start_s: float = 0.0
+    footage: dict | None = None
 
 
 class ScenarioError(Exception):
@@ -71,6 +75,8 @@ def load_scenarios(path: Path = SCENARIO_FILE, asset_dir: Path = ASSET_DIR) -> l
             expected_behavior=row["expected_behavior"],
             description=row.get("description", ""),
             category=row.get("category", "fire"),
+            feed_start_s=float(row.get("feed_start_s", 0)),
+            footage=row.get("footage"),
         )
         if not (asset_dir / scenario.video_asset).is_file():
             raise ValueError(f"Scenario {scenario.id}: missing asset {scenario.video_asset}")
@@ -135,12 +141,9 @@ class ScenarioEngine:
         if camera is None:
             raise ScenarioError(409, "SCENARIO_CAMERA_MISSING", "The scenario camera is not seeded")
         if camera.status != "active":
-            # Network simulation (M6B): an offline node sends no frames, so it cannot detect.
-            raise ScenarioError(
-                409,
-                "SCENARIO_CAMERA_OFFLINE",
-                f"{camera.name} is {camera.status}; bring it online first",
-            )
+            # The scenario feeds this node: it comes online (it may have been taken offline by
+            # the network simulation), so its viewer can play the scenario footage.
+            camera.status = "active"
         if delay_s is not None:
             delay = min(delay_s, self.max_delay_s)  # the operator's choice for this run
         elif self.delay_override_s is not None:

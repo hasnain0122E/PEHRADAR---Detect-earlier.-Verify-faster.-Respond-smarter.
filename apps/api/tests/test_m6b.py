@@ -394,11 +394,11 @@ def test_m6b_migration_adds_feed_meta_and_merge_event(tmp_path):
     assert make_settings().incident_merge_window_min == 30
 
 
-def test_scenario_refuses_an_offline_node(tmp_path):
+def test_scenario_brings_its_offline_node_online(tmp_path):
+    # Hotfix: the scenario feeds this node, so it must never show "offline" while it runs.
     client = scenario_client(tmp_path)
     client.post(
         f"{API}/cameras/status", json={"status": "offline", "camera_ids": [KORANGI]}, headers=AUTH
     )
-    refused = start(client)
-    assert refused.status_code == 409
-    assert refused.json()["error"]["code"] == "SCENARIO_CAMERA_OFFLINE"
+    assert start(client).status_code == 200
+    assert client.get(f"{API}/cameras/{KORANGI}").json()["status"] == "active"

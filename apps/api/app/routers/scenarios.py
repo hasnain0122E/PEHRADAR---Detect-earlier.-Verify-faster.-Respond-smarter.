@@ -6,6 +6,7 @@ POST /scenarios/reset           demo reset (operator); {"scope": "full"} also cl
 GET  /media/{name}              licensed demo clips from demo_assets/ (Range requests supported)
 """
 
+import json
 import re
 from typing import Literal
 
@@ -22,9 +23,23 @@ from app.routers.serializers import scenario_run_json
 from app.routers.uploads import error_response
 from app.services import operations
 from app.services.operations import OperationError
-from app.services.scenarios import ASSET_DIR, ScenarioEngine, ScenarioError
+from app.services.scenarios import ASSET_DIR, ScenarioEngine, ScenarioError, load_scenarios
 
 ASSET_NAME = re.compile(r"^[a-z0-9_]{1,60}\.mp4$")
+SEED_DIR = ASSET_DIR.parent / "seed"
+
+
+def allowed_media() -> frozenset[str]:
+    """Only clips the product references: scenario clips, the demo-feed library and the seeded
+    feed assets. Nothing else in demo_assets/ (or anywhere else) is served."""
+    names = {s.video_asset for s in load_scenarios()}
+    library = json.loads((SEED_DIR / "feed_library.json").read_text(encoding="utf-8"))
+    names |= {a["asset"] for a in library["assets"]}
+    network = json.loads((SEED_DIR / "karachi_network.json").read_text(encoding="utf-8"))
+    names |= {c["feed_asset"] for c in network["cameras"] if c.get("feed_asset")}
+    return frozenset(n for n in names if ASSET_NAME.fullmatch(n))
+
+
 DISCLAIMER = (
     "Demo scenario: licensed sample footage on a simulated node, analysed by the real detector. "
     "Not a real Karachi camera or event."
@@ -87,6 +102,9 @@ def build_router(settings: Settings, engine: ScenarioEngine | None) -> APIRouter
                     else scenario.trigger_after_seconds,
                     "expected_behavior": scenario.expected_behavior,
                     "category": scenario.category,
+                    "video_url": f"/api/v1/media/{scenario.video_asset}",
+                    "feed_start_s": scenario.feed_start_s,
+                    "footage": scenario.footage,
                     "latest_run": scenario_run_json(latest),
                 }
             )
@@ -127,13 +145,19 @@ def build_router(settings: Settings, engine: ScenarioEngine | None) -> APIRouter
             return error_response(exc.status, exc.code, exc.message)
         return scenario_run_json(run)
 
+    allowed = allowed_media()
+
     @router.get("/media/{name}")
     def media(name: str):
+        """Read-only demo footage for the camera viewer. Allow-listed names only; FileResponse
+        answers Range requests (206) so browsers can stream and seek."""
         path = ASSET_DIR / name
-        if not ASSET_NAME.fullmatch(name) or not path.is_file():
+        if name not in allowed or not path.is_file():
             return error_response(404, "NOT_FOUND", "Media not found")
         return FileResponse(
-            path, media_type="video/mp4", headers={"Cache-Control": "public, max-age=3600"}
+            path,
+            media_type="video/mp4",
+            headers={"Cache-Control": "public, max-age=3600", "X-Content-Type-Options": "nosniff"},
         )
 
     return router

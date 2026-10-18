@@ -215,7 +215,11 @@ export function DetectionReview(props: DetectionReviewProps) {
       )}
 
       {camera && props.feed && pending && (
-        <Disclosure summary="Live camera feed">
+        // Scenario footage opens by default so the evidence can be compared with the clip.
+        <Disclosure
+          summary={props.feed.kind === "video" && props.feed.incident ? "Camera feed (scenario footage)" : "Camera feed"}
+          defaultOpen={props.feed.kind === "video" && !!props.feed.incident}
+        >
           <CameraFeed camera={camera} mode={props.feed} compact />
         </Disclosure>
       )}

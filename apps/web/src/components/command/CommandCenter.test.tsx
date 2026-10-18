@@ -348,7 +348,8 @@ describe("CommandCenter (M5 automated monitoring)", () => {
     fireEvent.click(toasts.getByRole("button", { name: "Review incident" }));
 
     expect(await details().findByText("Fire detected")).toBeInTheDocument();
-    expect(details().getByLabelText(/SIMULATED LIVE FEED: Korangi/)).toBeInTheDocument();
+    // The review shows the scenario's own footage (the clip the detector analysed), open by default.
+    expect(details().getByLabelText(/SIMULATED INCIDENT FEED: Korangi/)).toBeInTheDocument();
     expect(details().getByText(/Automated demo scenario “Korangi industrial fire”/)).toBeInTheDocument();
     expect(details().getByRole("button", { name: "Confirm incident" })).toBeInTheDocument();
     expect(details().getByRole("button", { name: "Reject" })).toBeInTheDocument();

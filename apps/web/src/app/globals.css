@@ -521,6 +521,13 @@ body {
   background: var(--color-fire);
   animation: pr-blink 1.6s steps(2, start) infinite;
 }
+/* Scenario footage: red tag so it is never mistaken for an ordinary demo loop. */
+.pr-feed-tag.is-incident {
+  background: rgb(196 40 45 / 0.92);
+}
+.pr-feed-tag.is-incident .pr-feed-dot {
+  background: #fff;
+}
 .pr-feed-tag.is-public .pr-feed-dot {
   background: var(--color-ok);
 }
