@@ -1,38 +1,42 @@
 @import "tailwindcss";
 
-/* Design tokens from Design.md §3–4. Dark ops theme only in the MVP. */
+/* M6A light operational palette. Colour is reserved for state: the quiet system is neutral. */
 @theme {
-  --font-sans: var(--font-plex-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  --color-ink-950: #0a0d12;
-  --color-ink-900: #10151c;
-  --color-ink-850: #151b24;
-  --color-ink-800: #1c2430;
-  --color-ink-700: #2a3442;
-  --color-ink-500: #5b6878;
-  --color-ink-300: #9aa6b5;
-  --color-ink-100: #e6ebf1;
+  --color-canvas: #f5f6f7;
+  --color-surface: #ffffff;
+  --color-muted: #f2f4f7;
+  --color-fg: #111318;
+  --color-fg-2: #667085;
+  --color-fg-3: #98a2b3;
+  --color-line: #e7e9ec;
+  --color-line-strong: #d0d5dd;
+  --color-navy: #111827;
 
-  --color-sev-high: #ff4d3d;
-  --color-sev-medium: #ff9f1c;
-  --color-sev-low: #f2d45c;
-  --color-review: #ffb020;
-  --color-notified: #3da5ff;
-  --color-ack: #2fd1a1;
-  --color-resolved: #6b7685;
-  --color-danger: #ff4d6a;
-  --color-sim: #b39dff;
-  --color-focus: #7cc4ff;
+  --color-info: #2563eb;
+  --color-info-soft: #eff4ff;
+  --color-ok: #16a36a;
+  --color-ok-ink: #0b7a4b;
+  --color-ok-soft: #ebf8f1;
+  --color-warn: #f59e0b;
+  --color-warn-ink: #b45309;
+  --color-warn-soft: #fff7e6;
+  --color-fire: #e5484d;
+  --color-fire-ink: #c4282d;
+  --color-fire-soft: #fef0f0;
+
+  --shadow-float: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px rgb(16 24 40 / 0.08);
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
-  background: var(--color-ink-950);
-  color: var(--color-ink-100);
+  background: var(--color-canvas);
+  color: var(--color-fg);
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 20px;
@@ -47,7 +51,7 @@ body {
   }
 }
 
-/* ---------- Operations map markers (Design.md §7.2). Shape + glyph per state, not colour alone. */
+/* ---------- Map markers. Shape and glyph change per state, so nothing relies on colour alone. */
 
 .pr-marker {
   /* MapLibre positions markers absolutely; do not override position here. */
@@ -60,68 +64,69 @@ body {
   /* ≥ 32 px hit target */
   min-width: 32px;
   min-height: 32px;
+  transition: opacity 200ms ease;
 }
 .pr-marker:focus-visible {
-  outline: 2px solid var(--color-focus);
+  outline: 2px solid var(--color-info);
   outline-offset: 2px;
-  border-radius: 6px;
+  border-radius: 999px;
 }
 
-/* Camera: rounded square, dashed violet outline = simulated */
-.pr-marker-camera > svg {
-  box-sizing: content-box;
-  padding: 3px;
-  border-radius: 5px;
-  border: 1.5px dashed var(--color-sim);
-  background: var(--color-ink-800);
-  color: var(--color-ink-100);
+/* Camera: small neutral disc with a camera glyph. */
+.pr-pin {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
+  color: var(--color-fg-2);
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.12);
 }
 .pr-marker-camera.is-inactive {
-  opacity: 0.4;
+  opacity: 0.45;
 }
-.pr-marker-camera.is-pending > svg {
-  background: var(--color-review);
-  color: var(--color-ink-950);
-  border-style: solid;
-  border-color: var(--color-ink-950);
+.pr-marker-camera.is-selected .pr-pin {
+  background: var(--color-info);
+  border-color: var(--color-info);
+  color: #fff;
+  box-shadow: 0 0 0 4px rgb(37 99 235 / 0.18);
 }
-.pr-marker-camera.is-selected > svg {
-  box-shadow:
-    0 0 0 2px var(--color-ink-950),
-    0 0 0 4px var(--color-focus);
+.pr-marker-camera.is-pending .pr-pin {
+  background: var(--color-warn);
+  border-color: var(--color-warn);
+  color: #fff;
+  animation: pr-alert 1.8s ease-in-out infinite;
+}
+.pr-marker-camera.is-pending.is-selected .pr-pin {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--color-info);
+}
+/* The incident marker sits on the same spot and represents the camera while it is active. */
+.pr-marker-camera.has-incident {
+  visibility: hidden;
 }
 .pr-marker-camera.is-analyzing::after {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 2px;
   border-radius: 50%;
   border: 2px solid transparent;
-  border-top-color: var(--color-notified);
-  border-right-color: var(--color-notified);
-  animation: pr-spin 1.5s linear infinite;
+  border-top-color: var(--color-info);
+  border-right-color: var(--color-info);
+  animation: pr-spin 1.2s linear infinite;
 }
 .pr-badge {
   position: absolute;
-  top: -2px;
-  right: -4px;
+  top: -1px;
+  right: -3px;
   min-width: 16px;
   height: 16px;
-  padding: 0 3px;
-  border-radius: 4px;
-  background: var(--color-ink-950);
-  color: var(--color-review);
-  border: 1px solid var(--color-review);
-  font: 600 10px/14px var(--font-mono);
-}
-.pr-dot {
-  position: absolute;
-  bottom: 2px;
-  right: 1px;
-  width: 9px;
-  height: 9px;
-  transform: rotate(45deg);
-  background: var(--color-sev-high);
-  border: 1.5px solid var(--color-ink-950);
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--color-navy);
+  color: #fff;
+  font: 600 11px/16px var(--font-sans);
 }
 .pr-label {
   display: none;
@@ -129,85 +134,94 @@ body {
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  margin-top: 1px;
-  padding: 1px 5px;
+  margin-top: 2px;
+  padding: 2px 8px;
   white-space: nowrap;
-  border-radius: 3px;
-  background: var(--color-ink-900);
-  border: 1px solid var(--color-ink-700);
-  color: var(--color-ink-100);
-  font: 500 11px/15px var(--font-sans);
+  border-radius: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  color: var(--color-fg);
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.08);
+  font: 500 12px/16px var(--font-sans);
 }
-.pr-marker-camera.is-selected .pr-label,
-.pr-marker-camera:hover .pr-label,
-.pr-marker-camera.is-pending .pr-label {
+.pr-marker:hover .pr-label,
+.pr-marker.is-selected .pr-label,
+.pr-marker-camera.is-pending .pr-label,
+.pr-marker-incident .pr-label {
   display: block;
 }
 
-/* Fire station: shield. Unavailable = dashed + ×. Candidate = filled blue. */
-.pr-shield {
-  fill: var(--color-ink-900);
-  stroke: var(--color-ink-100);
-  stroke-width: 1.8;
-}
-.pr-marker-station.is-unavailable .pr-shield {
-  stroke: var(--color-ink-500);
-  stroke-dasharray: 3 2;
-}
-.pr-x {
-  position: absolute;
-  color: var(--color-ink-300);
-  font: 700 13px/1 var(--font-sans);
-}
-.pr-marker-station.is-candidate .pr-shield {
-  fill: var(--color-notified);
-  stroke: var(--color-ink-100);
-}
-.pr-marker-station.is-selected .pr-shield {
-  stroke: var(--color-focus);
-  stroke-width: 2.6;
-}
-
-/* Incident: diamond with severity glyph; pulse while active. */
-.pr-diamond {
+/* Fire station: rounded square in restrained green. Unavailable = grey dashed + ×. */
+.pr-station {
   display: grid;
   place-items: center;
   width: 22px;
   height: 22px;
-  transform: rotate(45deg);
-  border: 2px solid var(--color-ink-950);
-  border-radius: 3px;
+  border-radius: 6px;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-ok);
+  color: var(--color-ok-ink);
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.12);
 }
-.pr-diamond > span {
-  transform: rotate(-45deg);
-  color: var(--color-ink-950);
-  font: 700 11px/1 var(--font-sans);
+.pr-marker-station.is-unavailable .pr-station {
+  border: 1.5px dashed var(--color-fg-3);
+  color: var(--color-fg-3);
 }
-.sev-high .pr-diamond {
-  background: var(--color-sev-high);
+.pr-x {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  color: var(--color-fg-2);
+  font: 700 12px/1 var(--font-sans);
 }
-.sev-medium .pr-diamond {
-  background: var(--color-sev-medium);
+.pr-marker-station.is-candidate .pr-station {
+  width: 28px;
+  height: 28px;
+  background: var(--color-ok);
+  border-color: var(--color-ok);
+  color: #fff;
+  box-shadow: 0 0 0 4px rgb(22 163 106 / 0.18);
 }
-.sev-low .pr-diamond {
-  background: var(--color-sev-low);
+.pr-marker-station.is-selected .pr-station {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--color-info);
+}
+
+/* Incident: the one visually dominant element. Red disc with a flame and a slow pulse. */
+.pr-incident {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--color-fire);
+  border: 2px solid #fff;
+  color: #fff;
+  box-shadow: 0 2px 8px rgb(229 72 77 / 0.45);
+}
+.pr-marker-incident {
+  min-width: 40px;
+  min-height: 40px;
 }
 .pr-marker-incident:not(.is-closed)::before {
   content: "";
   position: absolute;
-  inset: 2px;
+  inset: 0;
   border-radius: 50%;
-  border: 2px solid var(--color-sev-high);
-  animation: pr-pulse 2s ease-out infinite;
+  background: rgb(229 72 77 / 0.25);
+  animation: pr-pulse 2.2s ease-out infinite;
 }
-.pr-marker-incident.is-closed .pr-diamond {
-  background: var(--color-resolved);
+.pr-marker-incident.sev-medium .pr-incident {
+  background: #ef6a3a;
 }
-.pr-marker-incident.is-selected .pr-diamond {
-  box-shadow:
-    0 0 0 2px var(--color-ink-950),
-    0 0 0 4px var(--color-focus);
-  scale: 1.15;
+.pr-marker-incident.sev-low .pr-incident {
+  background: var(--color-warn);
+}
+.pr-marker-incident.is-closed .pr-incident {
+  background: var(--color-fg-3);
+  box-shadow: none;
+}
+.pr-marker-incident.is-selected .pr-incident {
+  box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--color-fire);
 }
 
 .ops-map.hide-cameras .pr-marker-camera,
@@ -216,38 +230,70 @@ body {
   display: none;
 }
 
+/* Route mode: unrelated nodes recede; incident, candidate station and route stay. */
+.ops-map.is-route-mode .pr-marker-camera:not(.is-selected),
+.ops-map.is-route-mode .pr-marker-station:not(.is-candidate) {
+  /* !important: MapLibre writes an inline opacity on markers for occlusion. */
+  opacity: 0.2 !important;
+}
+
 /* Legend swatches reuse the marker vocabulary. */
-.legend-camera {
+.legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--color-fg-3);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--color-line-strong);
+}
+.legend-dot.is-feed {
+  background: var(--color-surface);
+  border-color: var(--color-fg-2);
+  box-shadow: none;
+}
+.legend-dot.is-pending {
+  background: var(--color-warn);
+  box-shadow: none;
+  border-color: var(--color-warn);
+}
+.legend-dot.is-selected {
+  background: var(--color-info);
+  border-color: var(--color-info);
+  box-shadow: none;
+}
+.legend-dot.is-incident {
   width: 14px;
   height: 14px;
-  border-radius: 4px;
-  border: 1.5px dashed var(--color-sim);
-  background: var(--color-ink-800);
+  background: var(--color-fire);
+  border-color: var(--color-fire);
+  box-shadow: none;
 }
-.legend-camera.is-pending {
-  background: var(--color-review);
-  border: 1.5px solid var(--color-ink-950);
+.legend-station {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1.5px solid var(--color-ok);
+  background: var(--color-surface);
 }
-.legend-shield {
-  width: 13px;
-  height: 15px;
-  clip-path: polygon(50% 0, 100% 15%, 100% 55%, 50% 100%, 0 55%, 0 15%);
-  background: var(--color-ink-100);
+.legend-station.is-unavailable {
+  border: 1.5px dashed var(--color-fg-3);
 }
-.legend-shield.is-unavailable {
-  background: var(--color-ink-500);
-}
-.legend-shield.is-candidate {
-  background: var(--color-notified);
-}
-.legend-diamond {
+.legend-cluster {
   display: inline-grid;
   place-items: center;
-  width: 14px;
-  height: 14px;
-  background: var(--color-sev-high);
-  color: var(--color-ink-950);
-  font-size: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line-strong);
+  color: var(--color-fg);
+  font: 600 10px/1 var(--font-sans);
+}
+.legend-route {
+  width: 18px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-info);
 }
 
 @keyframes pr-spin {
@@ -257,47 +303,58 @@ body {
 }
 @keyframes pr-pulse {
   from {
-    transform: scale(0.8);
-    opacity: 0.9;
+    transform: scale(0.7);
+    opacity: 1;
   }
   to {
-    transform: scale(1.9);
+    transform: scale(1.8);
     opacity: 0;
   }
 }
+@keyframes pr-alert {
+  50% {
+    box-shadow: 0 0 0 7px rgb(245 158 11 / 0.22);
+  }
+}
 
-/* MapLibre controls in the dark theme */
-.maplibregl-ctrl-group {
-  background: var(--color-ink-900) !important;
-  border: 1px solid var(--color-ink-700);
-}
-.maplibregl-ctrl-group button + button {
-  border-top-color: var(--color-ink-700) !important;
-}
-.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
-  filter: invert(1);
-}
+/* MapLibre attribution in the light theme. */
 .maplibregl-ctrl-attrib {
-  background: rgb(16 21 28 / 0.85) !important;
-  color: var(--color-ink-300);
+  background: rgb(255 255 255 / 0.85) !important;
+  color: var(--color-fg-2);
+  font-size: 11px;
 }
-.maplibregl-ctrl-attrib,
 .maplibregl-ctrl-attrib a {
-  color: var(--color-ink-300) !important;
+  color: var(--color-fg-2) !important;
 }
 
-/* New-alert flash (disabled with reduced motion by the rule above) */
-@keyframes pr-flash {
-  0%,
-  100% {
-    background-color: transparent;
+/* Toasts slide in from the right. */
+@keyframes pr-toast-in {
+  from {
+    transform: translateX(12px);
+    opacity: 0;
   }
-  30% {
-    background-color: rgb(255 176 32 / 0.18);
+  to {
+    transform: none;
+    opacity: 1;
   }
 }
-.pr-flash {
-  animation: pr-flash 1.2s ease-out 2;
+.pr-toast {
+  animation: pr-toast-in 220ms ease-out;
+}
+
+/* Drawer slides in from the right. */
+@keyframes pr-drawer-in {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.pr-drawer {
+  animation: pr-drawer-in 200ms ease-out;
 }
 
 /* Indeterminate bar for server-side analysis (no fabricated percentage). */
@@ -318,125 +375,36 @@ body {
   position: absolute;
   inset: 0;
   width: 33%;
-  background: var(--color-notified);
+  background: var(--color-info);
   animation: pr-indeterminate 1.4s ease-in-out infinite;
 }
 
-/* ---------- M5 city-scale command center ---------- */
-
-/* Demo-stream / public feed nodes: solid outline + live dot, distinct from simulated coverage. */
-.pr-marker-camera.src-demo_stream > svg,
-.pr-marker-camera.src-public_live > svg {
-  border-style: solid;
-  border-color: var(--color-notified);
-  background: #0f2236;
-}
-.pr-marker-camera.src-public_live > svg {
-  border-color: var(--color-ack);
-}
-.pr-marker-camera.src-demo_stream::before,
-.pr-marker-camera.src-public_live::before {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-notified);
-  box-shadow: 0 0 0 1.5px var(--color-ink-950);
-}
-.pr-marker-camera.src-demo_stream .pr-label,
-.pr-marker-camera.src-public_live .pr-label {
-  display: block;
-  color: var(--color-ink-300);
-}
-.pr-marker-camera.is-pending > svg {
-  animation: pr-alert 1.6s ease-in-out infinite;
-}
-@keyframes pr-alert {
-  50% {
-    box-shadow: 0 0 0 6px rgb(255 176 32 / 0.28);
-  }
-}
-
-/* Map chrome: compact, square-ish panels over the map. */
-.pr-map-ctl {
-  border: 1px solid var(--color-ink-700);
-  border-radius: 4px;
-  background: rgb(16 21 28 / 0.92);
-  backdrop-filter: blur(6px);
-}
-.pr-map-vignette {
-  background:
-    linear-gradient(to bottom, rgb(10 13 18 / 0.55), transparent 14%),
-    radial-gradient(120% 90% at 50% 45%, transparent 60%, rgb(10 13 18 / 0.55));
-}
-
-.legend-node {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: #2a2046;
-  border: 1.5px solid var(--color-sim);
-}
-.legend-node.is-mapped {
-  background: var(--color-ink-950);
-  border-color: var(--color-ink-100);
-}
-.legend-camera.is-demo {
-  border: 1.5px solid var(--color-notified);
-  background: #0f2236;
-}
-.legend-cluster {
-  display: inline-grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--color-ink-850);
-  border: 1.5px solid var(--color-sim);
-  font: 500 9px/1 var(--font-mono);
-}
-.legend-route {
-  width: 18px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--color-notified);
-  box-shadow: 0 0 0 1.5px #05080c;
-}
-
 /* Camera feed frame */
-.pr-feed {
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.03);
-}
 .pr-feed-empty {
   background:
-    repeating-linear-gradient(135deg, rgb(255 255 255 / 0.025) 0 8px, transparent 8px 16px),
-    var(--color-ink-950);
+    repeating-linear-gradient(135deg, rgb(16 24 40 / 0.03) 0 8px, transparent 8px 16px),
+    var(--color-muted);
 }
 .pr-feed-tag {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 1px 6px;
-  border-radius: 2px;
-  background: rgb(0 0 0 / 0.65);
-  border: 1px dashed var(--color-sim);
-  color: var(--color-sim);
-  font: 600 10px/16px var(--font-mono);
-  letter-spacing: 0.06em;
-}
-.pr-feed-tag.is-public {
-  border: 1px solid var(--color-ack);
-  color: var(--color-ack);
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgb(17 24 39 / 0.72);
+  color: #fff;
+  font: 600 11px/16px var(--font-sans);
+  letter-spacing: 0.04em;
 }
 .pr-feed-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: currentColor;
+  background: var(--color-fire);
   animation: pr-blink 1.6s steps(2, start) infinite;
+}
+.pr-feed-tag.is-public .pr-feed-dot {
+  background: var(--color-ok);
 }
 @keyframes pr-blink {
   to {
@@ -444,7 +412,13 @@ body {
   }
 }
 
-/* Status bar cells */
-.pr-stat + .pr-stat {
-  border-left: 1px solid var(--color-ink-700);
+/* Disclosure chevron */
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details[open] > summary .pr-chevron {
+  transform: rotate(90deg);
 }

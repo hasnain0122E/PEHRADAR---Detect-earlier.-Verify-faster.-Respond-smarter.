@@ -14,18 +14,18 @@ import type {
 import { EVENT_LABEL, isActiveIncident, SEVERITY_VIEW } from "@/lib/ops";
 
 export const SOURCE_VIEW: Record<SourceType, { label: string; short: string; tone: string }> = {
-  public_live: { label: "Public live feed", short: "Public live", tone: "text-ack border-ack/60" },
-  demo_stream: { label: "Demo stream (simulated)", short: "Demo stream", tone: "text-notified border-notified/60" },
-  verified_mapped: { label: "Mapped camera location", short: "Mapped", tone: "text-ink-100 border-ink-500" },
-  simulated_coverage: { label: "Simulated coverage node", short: "Simulated", tone: "text-sim border-sim/70 border-dashed" },
+  public_live: { label: "Public live feed", short: "Public live", tone: "bg-ok-soft text-ok-ink" },
+  demo_stream: { label: "Demo stream (simulated)", short: "Demo stream", tone: "bg-info-soft text-info" },
+  verified_mapped: { label: "Mapped camera location", short: "Mapped", tone: "bg-muted text-fg" },
+  simulated_coverage: { label: "Simulated coverage node", short: "Simulated", tone: "bg-muted text-fg-2" },
 };
 
 export const MONITORING_VIEW: Record<MonitoringStatus, { label: string; tone: string }> = {
-  monitoring: { label: "Monitoring (demo feed)", tone: "text-ack" },
-  simulated: { label: "Simulated coverage, no feed", tone: "text-sim" },
-  not_connected: { label: "Not connected (location only)", tone: "text-ink-300" },
-  offline: { label: "Offline", tone: "text-ink-500" },
-  maintenance: { label: "Maintenance", tone: "text-ink-500" },
+  monitoring: { label: "Monitoring", tone: "text-ok-ink" },
+  simulated: { label: "Simulated coverage", tone: "text-fg-2" },
+  not_connected: { label: "Location only", tone: "text-fg-2" },
+  offline: { label: "Offline", tone: "text-fg-3" },
+  maintenance: { label: "Maintenance", tone: "text-fg-3" },
 };
 
 export const FACILITY_LABEL: Record<FacilityType, string> = {
@@ -42,6 +42,8 @@ export const hasFeed = (c: Camera) => c.stream_type !== "none" && !!c.stream_url
 
 export interface CityStats {
   nodes: number;
+  /** Nodes whose status is active (simulated nodes included: this is node status, not a feed). */
+  online: number;
   feeds: number;
   feedsOnline: number;
   simulated: number;
@@ -60,6 +62,7 @@ export function cityStats(
 ): CityStats {
   return {
     nodes: cameras.length,
+    online: cameras.filter((c) => c.status === "active").length,
     feeds: cameras.filter(hasFeed).length,
     feedsOnline: cameras.filter((c) => hasFeed(c) && c.status === "active").length,
     simulated: cameras.filter((c) => c.source_type === "simulated_coverage").length,

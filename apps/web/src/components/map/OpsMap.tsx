@@ -3,28 +3,30 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type {
+  ExpressionSpecification,
   GeoJSONSource,
   LayerSpecification,
   Map as MapLibreMap,
   MapGeoJSONFeature,
   Marker,
 } from "maplibre-gl";
+import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { type Selection, selectionKey } from "../command/selection";
+import { Icon, type IconName } from "../icons";
 import { buildMarkers, cameraFeatures, type MarkerInput } from "./markers";
 
-/** OpenFreeMap dark style: free, no API key, OpenStreetMap data (Design.md §7.1). */
-const STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
+/** OpenFreeMap Positron: light neutral basemap, free, no API key, OpenStreetMap data. */
+const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 const WORKER_URL = "/vendor/maplibre-gl/maplibre-gl-worker.mjs";
-const FONT = ["Noto Sans Regular"]; // the only font stack the OpenFreeMap dark style serves
+const FONT = ["Noto Sans Regular"]; // served by every OpenFreeMap style
 const KARACHI_CENTER: [number, number] = [67.0611, 24.8807];
 // Same box as the API's Karachi CHECK constraint, padded a little.
 const KARACHI_BOUNDS: [[number, number], [number, number]] = [
   [66.45, 24.6],
   [67.75, 25.4],
 ];
-const INCIDENT_OFFSET: [number, number] = [16, -16];
 const VIEW_3D = { pitch: 52, bearing: -17 };
 const VIEW_2D = { pitch: 0, bearing: 0 };
 /** Buildings only when they carry information: below this zoom the extrusion layer is hidden. */
@@ -32,20 +34,23 @@ const BUILDINGS_MIN_ZOOM = 13.5;
 
 type MapState = "loading" | "ready" | "tiles-failed" | "unsupported";
 type Layer = "cameras" | "stations" | "incidents";
-type View = "3d" | "2d";
+export type MapView = "3d" | "2d";
 
 export interface MapFocus {
   /** Changes for every new focus request (e.g. a new alert). */
   key: string;
   lng: number;
   lat: number;
+  /** Frame an area (e.g. a zone) instead of flying to one point. */
+  bounds?: [[number, number], [number, number]];
 }
 
 export interface OpsMapProps extends MarkerInput {
   onSelect: (selection: Selection) => void;
-  /** Suggested response route of the selected incident ([lng, lat] pairs). */
+  /** Suggested response route in route mode ([lng, lat] pairs). Unrelated nodes recede. */
   route?: [number, number][] | null;
   focus?: MapFocus | null;
+  view?: MapView;
 }
 
 type Point = [number, number];
@@ -67,7 +72,7 @@ function framingFor(input: OpsMapProps, selection: Selection | null): Point[] {
       const incident = input.incidents.find((i) => i.id === selection.id);
       points = [
         at(incident),
-        at(input.stations.find((s) => s.id === incident?.assigned_station_id)),
+        ...(input.route?.length ? [at(input.stations.find((s) => s.id === incident?.assigned_station_id))] : []),
         ...(input.route ?? []),
       ];
       break;
@@ -81,7 +86,7 @@ function framingFor(input: OpsMapProps, selection: Selection | null): Point[] {
   return points.filter((p): p is Point => p !== null);
 }
 
-function boundsOf(points: Point[]): [Point, Point] {
+export function boundsOf(points: Point[]): [Point, Point] {
   const lngs = points.map((p) => p[0]);
   const lats = points.map((p) => p[1]);
   return [
@@ -90,10 +95,11 @@ function boundsOf(points: Point[]): [Point, Point] {
   ];
 }
 
-const prefersReducedMotion = () =>
+export const prefersReducedMotion = () =>
   typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-const CAMERA_LAYERS = ["pr-cluster-halo", "pr-cluster", "pr-cluster-count", "pr-camera-point"];
+const CAMERA_LAYERS = ["pr-cluster", "pr-cluster-count", "pr-camera-point"];
+const pointOpacity = (): ExpressionSpecification => ["case", ["get", "inactive"], 0.4, 1];
 
 function cityLayers(): LayerSpecification[] {
   return [
@@ -102,7 +108,7 @@ function cityLayers(): LayerSpecification[] {
       type: "line",
       source: "pr-route",
       layout: { "line-cap": "round", "line-join": "round" },
-      paint: { "line-color": "#05080c", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 6, 15, 12] },
+      paint: { "line-color": "#ffffff", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 7, 15, 12] },
     },
     {
       id: "pr-route-line",
@@ -110,19 +116,8 @@ function cityLayers(): LayerSpecification[] {
       source: "pr-route",
       layout: { "line-cap": "round", "line-join": "round" },
       paint: {
-        "line-color": "#3da5ff",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3, 15, 6],
-      },
-    },
-    {
-      id: "pr-cluster-halo",
-      type: "circle",
-      source: "pr-cameras",
-      filter: ["has", "point_count"],
-      paint: {
-        "circle-color": "#b39dff",
-        "circle-opacity": 0.12,
-        "circle-radius": ["step", ["get", "point_count"], 20, 10, 25, 25, 31],
+        "line-color": "#2563eb",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 15, 6],
       },
     },
     {
@@ -131,10 +126,10 @@ function cityLayers(): LayerSpecification[] {
       source: "pr-cameras",
       filter: ["has", "point_count"],
       paint: {
-        "circle-color": "#151b24",
-        "circle-stroke-color": "#b39dff",
-        "circle-stroke-width": 1.5,
-        "circle-radius": ["step", ["get", "point_count"], 13, 10, 16, 25, 20],
+        "circle-color": "#ffffff",
+        "circle-stroke-color": "#d0d5dd",
+        "circle-stroke-width": 1,
+        "circle-radius": ["step", ["get", "point_count"], 13, 10, 15, 25, 18],
       },
     },
     {
@@ -148,7 +143,7 @@ function cityLayers(): LayerSpecification[] {
         "text-size": 12,
         "text-allow-overlap": true,
       },
-      paint: { "text-color": "#e6ebf1" },
+      paint: { "text-color": "#111318" },
     },
     {
       id: "pr-camera-point",
@@ -156,29 +151,18 @@ function cityLayers(): LayerSpecification[] {
       source: "pr-cameras",
       filter: ["!", ["has", "point_count"]],
       paint: {
-        "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 15, 7],
-        "circle-color": [
-          "match",
-          ["get", "source_type"],
-          "verified_mapped",
-          "#0a0d12",
-          "#2a2046",
-        ],
-        "circle-stroke-color": [
-          "match",
-          ["get", "source_type"],
-          "verified_mapped",
-          "#e6ebf1",
-          "#b39dff",
-        ],
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, 3.5, 15, 6],
+        "circle-color": ["match", ["get", "source_type"], "verified_mapped", "#111827", "#98a2b3"],
+        "circle-stroke-color": "#ffffff",
         "circle-stroke-width": 1.5,
-        "circle-opacity": ["case", ["get", "inactive"], 0.4, 1],
-        "circle-stroke-opacity": ["case", ["get", "inactive"], 0.4, 1],
+        "circle-opacity": pointOpacity(),
+        "circle-stroke-opacity": pointOpacity(),
       },
     },
   ];
 }
 
+/** Very subtle light-grey extrusions: depth without a dark cityscape. */
 function buildingLayer(): LayerSpecification {
   return {
     id: "pr-buildings-3d",
@@ -192,11 +176,11 @@ function buildingLayer(): LayerSpecification {
         ["linear"],
         ["coalesce", ["get", "render_height"], 6],
         0,
-        "#273244",
-        40,
-        "#34425a",
-        120,
-        "#43546f",
+        "#eceef1",
+        60,
+        "#e3e6ea",
+        150,
+        "#dadee3",
       ],
       // Rise in over one zoom level instead of popping in.
       "fill-extrusion-height": [
@@ -209,14 +193,14 @@ function buildingLayer(): LayerSpecification {
         ["coalesce", ["get", "render_height"], 6],
       ],
       "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-      "fill-extrusion-opacity": 0.9,
+      "fill-extrusion-opacity": 0.8,
       "fill-extrusion-vertical-gradient": true,
     },
   };
 }
 
 export function OpsMap(props: OpsMapProps) {
-  const { onSelect, route = null, focus = null, ...input } = props;
+  const { onSelect, route = null, focus = null, view = "3d", ...input } = props;
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const markerCtor = useRef<typeof Marker | null>(null);
@@ -226,7 +210,7 @@ export function OpsMap(props: OpsMapProps) {
   // Bumped once the map exists, and again when the style has loaded (layers can be added).
   const [markersVersion, setMarkersVersion] = useState(0);
   const [styleReady, setStyleReady] = useState(false);
-  const [view, setView] = useState<View>(() => (prefersReducedMotion() ? "2d" : "3d"));
+  const [layersOpen, setLayersOpen] = useState(false);
   const [layers, setLayers] = useState<Record<Layer, boolean>>({
     cameras: true,
     stations: true,
@@ -251,7 +235,7 @@ export function OpsMap(props: OpsMapProps) {
       if (cancelled || !container.current) return;
       lib.setWorkerUrl(WORKER_URL);
       let map: MapLibreMap;
-      const initial = prefersReducedMotion() ? VIEW_2D : VIEW_3D;
+      const initial = view === "3d" ? VIEW_3D : VIEW_2D;
       try {
         map = new lib.Map({
           container: container.current,
@@ -270,11 +254,17 @@ export function OpsMap(props: OpsMapProps) {
         return;
       }
       let styleLoaded = false;
-      map.addControl(new lib.NavigationControl({ visualizePitch: true }), "top-right");
       map.on("load", () => {
         styleLoaded = true;
         if (cancelled) return;
-        const firstSymbol = map.getStyle().layers.find((l) => l.type === "symbol")?.id;
+        const styleLayers = map.getStyle().layers;
+        const firstSymbol = styleLayers.find((l) => l.type === "symbol")?.id;
+        // One calm label per place: the Latin name only (Positron prints Latin + local script).
+        for (const l of styleLayers) {
+          if (l.type === "symbol" && JSON.stringify(l.layout?.["text-field"] ?? "").includes("name")) {
+            map.setLayoutProperty(l.id, "text-field", ["coalesce", ["get", "name:en"], ["get", "name:latin"], ["get", "name"]]);
+          }
+        }
         map.addSource("pr-cameras", {
           type: "geojson",
           data: { type: "FeatureCollection", features: [] },
@@ -316,7 +306,7 @@ export function OpsMap(props: OpsMapProps) {
         // Individual tile errors after load are tolerated; a style that never loads is not.
         if (!styleLoaded && !cancelled) setState("tiles-failed");
       });
-      // The map pane can be hidden (small screens) or resized; keep the canvas matched to it.
+      // The map pane resizes when the context drawer opens; keep the canvas matched to it.
       const observer = new ResizeObserver(() => map.resize());
       observer.observe(container.current);
       map.once("remove", () => observer.disconnect());
@@ -331,6 +321,8 @@ export function OpsMap(props: OpsMapProps) {
       mapRef.current?.remove();
       mapRef.current = null;
     };
+    // The initial view is read once; later changes are eased below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const { cameras, stations, incidents, pending, analyzingCameraId, scenarioCameraIds, selection } = input;
@@ -340,6 +332,7 @@ export function OpsMap(props: OpsMapProps) {
   );
   const specs = useMemo(() => buildMarkers(markerInput), [markerInput]);
   const features = useMemo(() => cameraFeatures(markerInput), [markerInput]);
+  const routeMode = !!route && route.length > 1;
 
   // Clustered quiet cameras: one GeoJSON source, updated only when the set changes.
   useEffect(() => {
@@ -351,12 +344,23 @@ export function OpsMap(props: OpsMapProps) {
     if (!styleReady) return;
     mapRef.current?.getSource<GeoJSONSource>("pr-route")?.setData({
       type: "FeatureCollection",
-      features:
-        route && route.length > 1
-          ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route } }]
-          : [],
+      features: routeMode
+        ? [{ type: "Feature", properties: {}, geometry: { type: "LineString", coordinates: route } }]
+        : [],
     });
-  }, [route, styleReady]);
+  }, [route, routeMode, styleReady]);
+
+  // Route mode: the clustered network recedes (HTML markers are dimmed in CSS).
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleReady || !map.getLayer("pr-cluster")) return;
+    const dim = 0.25;
+    map.setPaintProperty("pr-cluster", "circle-opacity", routeMode ? dim : 1);
+    map.setPaintProperty("pr-cluster", "circle-stroke-opacity", routeMode ? dim : 1);
+    map.setPaintProperty("pr-cluster-count", "text-opacity", routeMode ? dim : 1);
+    map.setPaintProperty("pr-camera-point", "circle-opacity", routeMode ? dim : pointOpacity());
+    map.setPaintProperty("pr-camera-point", "circle-stroke-opacity", routeMode ? dim : pointOpacity());
+  }, [routeMode, styleReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -394,7 +398,6 @@ export function OpsMap(props: OpsMapProps) {
         const marker = new MarkerClass({
           element: el,
           anchor: "center",
-          offset: spec.select.kind === "incident" ? INCIDENT_OFFSET : [0, 0],
           pitchAlignment: "viewport",
           rotationAlignment: "viewport",
         })
@@ -422,15 +425,17 @@ export function OpsMap(props: OpsMapProps) {
     }
   }, [specs, markersVersion]);
 
-  // First data load: frame the whole network.
+  // First data load: frame the whole network. "Show all of Karachi" returns to the same view.
+  const fitAll = (duration: number) => {
+    const map = mapRef.current;
+    const points = [...input.cameras, ...input.stations].map((x) => at(x)!);
+    if (!map || points.length < 2) return false;
+    map.fitBounds(boundsOf(points), { padding: 48, duration, maxZoom: 12, ...(view === "3d" ? VIEW_3D : VIEW_2D) });
+    return true;
+  };
   const fitted = useRef(false);
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map || fitted.current) return;
-    const points = [...input.cameras, ...input.stations].map((x) => at(x)!);
-    if (points.length < 2) return;
-    fitted.current = true;
-    map.fitBounds(boundsOf(points), { padding: 40, duration: 0, maxZoom: 12, ...(view === "3d" ? VIEW_3D : VIEW_2D) });
+    if (!fitted.current) fitted.current = fitAll(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input.cameras, input.stations, markersVersion]);
 
@@ -440,12 +445,14 @@ export function OpsMap(props: OpsMapProps) {
     const map = mapRef.current;
     if (!map || !focus || lastFocus.current === focus.key) return;
     lastFocus.current = focus.key;
-    if (prefersReducedMotion()) map.jumpTo({ center: [focus.lng, focus.lat], zoom: 14.5 });
+    const reduced = prefersReducedMotion();
+    if (focus.bounds) map.fitBounds(focus.bounds, { padding: 64, maxZoom: 14.5, duration: reduced ? 0 : 800 });
+    else if (reduced) map.jumpTo({ center: [focus.lng, focus.lat], zoom: 14.5 });
     else map.flyTo({ center: [focus.lng, focus.lat], zoom: 14.5, speed: 1.1, curve: 1.5, essential: true });
   }, [focus, markersVersion]);
 
-  // Move to the selected item when the selection changes (not on every data refresh). An
-  // incident is framed together with its candidate station and suggested route.
+  // Move to the selected item when the selection changes (not on every data refresh). In route
+  // mode an incident is framed together with its candidate station and the whole route.
   const key = selectionKey(input.selection);
   const framing = framingFor(props, input.selection);
   const framingKey = `${key}|${framing.length}`;
@@ -459,7 +466,8 @@ export function OpsMap(props: OpsMapProps) {
       map.easeTo({ center: framing[0], zoom: Math.max(map.getZoom(), 14.2), duration });
     } else {
       map.fitBounds(boundsOf(framing), {
-        padding: { top: 90, bottom: 70, left: 80, right: 80 },
+        // Extra room on the right for the incident label; the bottom-left route card.
+        padding: { top: 96, bottom: 140, left: 120, right: 180 },
         maxZoom: 14.5,
         duration,
       });
@@ -467,120 +475,144 @@ export function OpsMap(props: OpsMapProps) {
   }, [framingKey, framing, markersVersion]);
 
   const hidden = (Object.keys(layers) as Layer[]).filter((l) => !layers[l]);
+  const motion = () => (prefersReducedMotion() ? 0 : 300);
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden bg-ink-950">
+    <div className="relative min-h-0 flex-1 overflow-hidden bg-[#eef0f2]">
       {/* MapLibre's own CSS makes the container position:relative, so size it from a wrapper. */}
       <div className="absolute inset-0">
         <div
           ref={container}
           data-testid="ops-map"
-          className={`ops-map h-full w-full ${hidden.map((l) => `hide-${l}`).join(" ")}`}
+          className={`ops-map h-full w-full ${routeMode ? "is-route-mode" : ""} ${hidden.map((l) => `hide-${l}`).join(" ")}`}
         />
       </div>
-      <div aria-hidden className="pr-map-vignette pointer-events-none absolute inset-0" />
 
-      <div className="absolute top-3 left-3 flex flex-wrap gap-2">
-        <fieldset className="pr-map-ctl flex gap-0.5 p-0.5 text-xs">
-          <legend className="sr-only">Map layers</legend>
-          {(["cameras", "stations", "incidents"] as Layer[]).map((layer) => (
-            <label
-              key={layer}
-              className="flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 capitalize hover:bg-ink-800 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus"
-            >
-              <input
-                type="checkbox"
-                className="accent-focus"
-                checked={layers[layer]}
-                onChange={(e) => setLayers((prev) => ({ ...prev, [layer]: e.target.checked }))}
-              />
-              {layer}
-            </label>
-          ))}
-        </fieldset>
-        <div role="group" aria-label="Map view" className="pr-map-ctl flex gap-0.5 p-0.5 text-xs">
-          {(["3d", "2d"] as View[]).map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-pressed={view === v}
-              onClick={() => setView(v)}
-              className={`rounded-sm px-2.5 py-1 font-mono font-semibold uppercase focus-visible:outline-2 focus-visible:outline-focus ${
-                view === v ? "bg-ink-700 text-ink-100" : "text-ink-300 hover:bg-ink-800"
-              }`}
-            >
-              {v}
-            </button>
-          ))}
+      <div
+        role="toolbar"
+        aria-label="Map controls"
+        aria-orientation="vertical"
+        className="absolute right-4 bottom-10 grid rounded-lg border border-line bg-surface shadow-float"
+      >
+        <ToolButton icon="plus" label="Zoom in" onClick={() => mapRef.current?.zoomIn({ duration: motion() })} />
+        <ToolButton icon="minus" label="Zoom out" onClick={() => mapRef.current?.zoomOut({ duration: motion() })} />
+        <ToolButton icon="locate" label="Show all of Karachi" onClick={() => fitAll(prefersReducedMotion() ? 0 : 700)} />
+        <div className="relative">
+          <ToolButton icon="layers" label="Layers and legend" pressed={layersOpen} onClick={() => setLayersOpen((v) => !v)} />
+          {layersOpen && (
+            <LayersPanel
+              layers={layers}
+              onChange={(layer, on) => setLayers((prev) => ({ ...prev, [layer]: on }))}
+              onClose={() => setLayersOpen(false)}
+            />
+          )}
         </div>
       </div>
 
       {state !== "ready" && (
         <p
           role="status"
-          className="absolute top-14 left-3 rounded border border-ink-700 bg-ink-900/95 px-2 py-1 text-xs text-ink-300"
+          className="absolute bottom-10 left-4 rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-fg-2 shadow-float"
         >
           {state === "loading" && "Loading map…"}
-          {state === "tiles-failed" &&
-            "Map tiles unavailable. Markers are still shown at their coordinates."}
+          {state === "tiles-failed" && "Map tiles unavailable. Markers are still shown at their coordinates."}
           {state === "unsupported" &&
-            "The map cannot run in this browser (WebGL unavailable). Use the lists on the left."}
+            "The map cannot run in this browser (WebGL unavailable). Use the lists in the navigation."}
         </p>
       )}
-
-      <MapLegend />
     </div>
   );
 }
 
-function MapLegend() {
+function ToolButton({
+  icon,
+  label,
+  onClick,
+  pressed,
+}: {
+  icon: IconName;
+  label: string;
+  onClick: () => void;
+  pressed?: boolean;
+}) {
   return (
-    <details className="pr-map-ctl absolute bottom-3 left-3 max-w-72 text-xs open:pb-2">
-      <summary className="cursor-pointer px-3 py-1.5 font-medium tracking-wider text-ink-300 uppercase">
-        Legend
-      </summary>
-      <ul className="grid gap-1.5 px-3 pt-1">
-        <li className="flex items-center gap-2">
-          <span className="legend-cluster" aria-hidden>
-            12
-          </span>{" "}
-          Group of simulated coverage nodes (click to expand)
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="legend-node" aria-hidden /> Simulated coverage node (no feed)
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="legend-node is-mapped" aria-hidden /> Mapped camera location (OSM, no feed)
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="legend-camera is-demo" aria-hidden /> Demo-stream node (simulated feed)
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="legend-camera is-pending" aria-hidden /> Camera with detection to review
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="legend-shield" aria-hidden /> Fire station, available (demo flag)
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="legend-shield is-unavailable" aria-hidden /> Fire station, unavailable
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="legend-shield is-candidate" aria-hidden /> Candidate station of the
-          selected incident
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="legend-route" aria-hidden /> Suggested response route (estimate)
-        </li>
-        <li className="flex items-center gap-2">
-          <span className="legend-diamond" aria-hidden>
-            ▲
-          </span>{" "}
-          Active incident (▲ high · ◆ medium · ● low)
-        </li>
-      </ul>
-      <p className="px-3 pt-2 text-ink-500">
-        No official CCTV is connected. Stations and roads: © OpenStreetMap contributors, unverified.
-      </p>
-    </details>
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-pressed={pressed}
+      onClick={onClick}
+      className={`grid h-9 w-9 place-items-center border-b border-line text-fg-2 first:rounded-t-lg last:rounded-b-lg last:border-b-0 hover:bg-muted hover:text-fg focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-info ${
+        pressed ? "bg-muted text-fg" : ""
+      }`}
+    >
+      <Icon name={icon} size={18} />
+    </button>
+  );
+}
+
+const LAYER_LABEL: Record<Layer, string> = { cameras: "Cameras", stations: "Fire stations", incidents: "Incidents" };
+
+function LayersPanel({
+  layers,
+  onChange,
+  onClose,
+}: {
+  layers: Record<Layer, boolean>;
+  onChange: (layer: Layer, on: boolean) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div
+      role="dialog"
+      aria-label="Layers and legend"
+      className="absolute right-full bottom-0 mr-2 grid w-64 gap-4 rounded-lg border border-line bg-surface p-4 shadow-float"
+    >
+      <fieldset className="grid gap-2">
+        <legend className="mb-2 text-xs font-medium tracking-wide text-fg-3 uppercase">Layers</legend>
+        {(Object.keys(LAYER_LABEL) as Layer[]).map((layer) => (
+          <label key={layer} className="flex cursor-pointer items-center justify-between gap-2 text-[13px]">
+            {LAYER_LABEL[layer]}
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-navy"
+              checked={layers[layer]}
+              onChange={(e) => onChange(layer, e.target.checked)}
+            />
+          </label>
+        ))}
+      </fieldset>
+      <div className="grid gap-2">
+        <p className="text-xs font-medium tracking-wide text-fg-3 uppercase">Legend</p>
+        <ul className="grid gap-2 text-[13px] text-fg-2">
+          <LegendRow swatch={<span className="legend-cluster">12</span>}>Group of nodes</LegendRow>
+          <LegendRow swatch={<span className="legend-dot" />}>Simulated coverage node</LegendRow>
+          <LegendRow swatch={<span className="legend-dot is-feed" />}>Camera with a feed</LegendRow>
+          <LegendRow swatch={<span className="legend-dot is-selected" />}>Selected</LegendRow>
+          <LegendRow swatch={<span className="legend-dot is-pending" />}>Detection to review</LegendRow>
+          <LegendRow swatch={<span className="legend-dot is-incident" />}>Confirmed incident</LegendRow>
+          <LegendRow swatch={<span className="legend-station" />}>Fire station (demo availability)</LegendRow>
+          <LegendRow swatch={<span className="legend-station is-unavailable" />}>Station unavailable</LegendRow>
+          <LegendRow swatch={<span className="legend-route" />}>Suggested route (estimate)</LegendRow>
+        </ul>
+      </div>
+      <p className="text-xs text-fg-3">Stations and roads © OpenStreetMap contributors, unverified.</p>
+    </div>
+  );
+}
+
+function LegendRow({ swatch, children }: { swatch: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <li className="flex items-center gap-3">
+      <span aria-hidden className="grid w-5 place-items-center">
+        {swatch}
+      </span>
+      {children}
+    </li>
   );
 }

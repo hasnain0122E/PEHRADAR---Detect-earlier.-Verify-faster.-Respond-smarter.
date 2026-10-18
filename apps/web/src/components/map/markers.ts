@@ -1,5 +1,6 @@
-// Pure marker model for the operations map (Design.md §7.2). Shapes differ per entity and every
-// state has a glyph or outline change, so nothing relies on colour alone.
+// Pure marker model for the operations map. Shapes differ per entity (disc, rounded square,
+// large flame disc) and every state has a glyph, size or outline change, so nothing relies on
+// colour alone.
 //
 // M5 scale: ~180 cameras. Quiet simulated-coverage nodes go to a clustered GeoJSON layer
 // (cameraFeatures). Every camera that needs attention (pending detection, active incident,
@@ -10,6 +11,7 @@ import type { Camera, Detection, FireStation, Incident } from "@/lib/api/types";
 import { EVENT_LABEL, isActiveIncident, SEVERITY_VIEW, STATUS_LABEL } from "@/lib/ops";
 
 import type { Selection } from "../command/selection";
+import { iconSvg } from "../icons";
 
 export interface MarkerSpec {
   key: string;
@@ -106,10 +108,9 @@ export function cameraFeatures(input: MarkerInput): CameraFeatureCollection {
   };
 }
 
-const CAMERA_SVG =
-  '<svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>';
-const SHIELD_SVG =
-  '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path class="pr-shield" d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z"/></svg>';
+const CAMERA_SVG = iconSvg("camera", 12);
+const STATION_SVG = iconSvg("station", 13);
+const FLAME_SVG = iconSvg("flame", 16);
 
 export function buildMarkers(input: MarkerInput): MarkerSpec[] {
   const { cameras, stations, incidents, selection } = input;
@@ -131,7 +132,7 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
       lng: s.longitude,
       lat: s.latitude,
       className: classes.join(" "),
-      html: `${SHIELD_SVG}${glyph}`,
+      html: `<span class="pr-station">${STATION_SVG}</span>${glyph}<span class="pr-label">${escapeHtml(s.name)}</span>`,
       label: `Fire station: ${s.name} (${s.status === "available" ? "available, demo flag" : "unavailable, demo flag"}${s.id === candidateStationId ? "; candidate station" : ""})`,
       select: { kind: "station", id: s.id },
       z: 1,
@@ -151,7 +152,6 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
     const badge = pendingCount
       ? `<span class="pr-badge" aria-hidden="true">${pendingCount}</span>`
       : "";
-    const dot = incident ? '<span class="pr-dot" aria-hidden="true"></span>' : "";
     const states = [
       pendingCount ? `${pendingCount} detection${pendingCount > 1 ? "s" : ""} awaiting review` : null,
       incident ? "active incident" : null,
@@ -165,7 +165,7 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
       lng: c.longitude,
       lat: c.latitude,
       className: classes.join(" "),
-      html: `${CAMERA_SVG}${badge}${dot}<span class="pr-label">${escapeHtml(shortName(c.name))}</span>`,
+      html: `<span class="pr-pin">${CAMERA_SVG}</span>${badge}<span class="pr-label">${escapeHtml(shortName(c.name))}</span>`,
       label: `Camera: ${c.name}${states.length ? ` (${states.join(", ")})` : ""}`,
       select: { kind: "camera", id: c.id },
       z: 2,
@@ -185,7 +185,7 @@ export function buildMarkers(input: MarkerInput): MarkerSpec[] {
       lng: i.longitude,
       lat: i.latitude,
       className: classes.join(" "),
-      html: `<span class="pr-diamond" aria-hidden="true"><span>${sev.glyph}</span></span>`,
+      html: `<span class="pr-incident" aria-hidden="true">${FLAME_SVG}</span><span class="pr-label">${escapeHtml(i.camera.location_label)}</span>`,
       label: `Incident: ${EVENT_LABEL[i.event_type]}, ${sev.label} severity, ${STATUS_LABEL[i.status]}, ${i.camera.location_label}`,
       select: { kind: "incident", id: i.id },
       z: 3,

@@ -6,40 +6,36 @@ import type { Scenario } from "@/lib/api/types";
 import { type ActivityEntry, type CityStats, isLiveRun } from "@/lib/city";
 import { pktTime } from "@/lib/ops";
 
-import { BUTTON_SECONDARY, InlineError } from "./ui";
+import { Icon } from "../icons";
+import { BUTTON_PRIMARY, BUTTON_SECONDARY, FOCUS, InlineError, Modal } from "./ui";
 import type { ScenarioState } from "./useScenarios";
 import { describeError } from "./useOpsData";
 
-/** City status bar (M5): every number is counted from the API data on screen. */
-export function CityStatusBar({ stats, scenarioLive }: { stats: CityStats; scenarioLive: string | null }) {
+/** One compact status strip. Every number is counted from the API data on screen. */
+export function StatusStrip({ stats, scenarioLive }: { stats: CityStats; scenarioLive: string | null }) {
   const cells: { label: string; value: string; tone?: string; title: string }[] = [
     { label: "Monitoring nodes", value: String(stats.nodes), title: `${stats.simulated} simulated coverage, ${stats.mapped} mapped location(s), ${stats.feeds} with a feed` },
-    { label: "Public / demo feeds", value: String(stats.feeds), title: "Nodes with a playable stream (demo streams are simulated)" },
-    { label: "Feeds online", value: String(stats.feedsOnline), tone: stats.feedsOnline ? "text-ack" : undefined, title: "Feed nodes whose status is active" },
-    { label: "Pending alerts", value: String(stats.pending), tone: stats.pending ? "text-review" : undefined, title: "Detections awaiting operator review" },
-    { label: "Active incidents", value: String(stats.activeIncidents), tone: stats.activeIncidents ? "text-sev-high" : undefined, title: "Confirmed and not yet closed" },
-    { label: "Available facilities", value: `${stats.availableStations}/${stats.stations}`, title: "Fire-response facilities marked available. Demo flag, not real availability" },
+    { label: "Online", value: String(stats.online), title: "Nodes whose status is active. Simulated nodes have no real camera behind them." },
+    { label: "Response facilities", value: `${stats.availableStations}/${stats.stations}`, title: "Fire-response facilities marked available. Demo flag, not real availability" },
+    { label: "Pending alerts", value: String(stats.pending), tone: stats.pending ? "text-warn-ink" : undefined, title: "Detections awaiting operator review" },
+    { label: "Active incidents", value: String(stats.activeIncidents), tone: stats.activeIncidents ? "text-fire-ink" : undefined, title: "Confirmed and not yet closed" },
   ];
   return (
-    <div
-      aria-label="City status"
-      className="flex flex-wrap items-stretch border-b border-ink-700 bg-ink-950/80 text-xs"
-    >
-      <dl className="flex min-w-0 flex-1 flex-wrap">
+    <div aria-label="City status" className="flex h-11 shrink-0 items-center gap-8 overflow-x-auto border-b border-line bg-surface px-6">
+      <dl className="flex items-center gap-8">
         {cells.map((c) => (
-          <div key={c.label} className="pr-stat flex items-baseline gap-2 px-4 py-1.5" title={c.title}>
-            <dt className="text-[10px] font-medium tracking-[0.12em] text-ink-500 uppercase">{c.label}</dt>
-            <dd className={`font-mono text-sm font-semibold tabular-nums ${c.tone ?? "text-ink-100"}`}>{c.value}</dd>
+          <div key={c.label} className="flex items-baseline gap-2 whitespace-nowrap" title={c.title}>
+            <dt className="order-2 text-[13px] text-fg-2">{c.label}</dt>
+            <dd className={`order-1 text-base font-semibold tabular-nums ${c.tone ?? "text-fg"}`}>{c.value}</dd>
           </div>
         ))}
       </dl>
-      <p className="flex items-center px-4 py-1.5 text-[11px] text-ink-500">
-        {scenarioLive ? (
-          <span className="font-medium text-notified">{scenarioLive}</span>
-        ) : (
-          "Simulated network · no official CCTV connected"
-        )}
-      </p>
+      {scenarioLive && (
+        <p className="ml-auto flex items-center gap-2 text-[13px] font-medium whitespace-nowrap text-info">
+          <span aria-hidden className="h-2 w-2 animate-pulse rounded-full bg-info" />
+          {scenarioLive}
+        </p>
+      )}
     </div>
   );
 }
@@ -55,12 +51,12 @@ function useNow(active: boolean) {
 }
 
 const RUN_VIEW = {
-  scheduled: { text: "Armed", tone: "text-notified" },
-  running: { text: "Analysing (real detector)", tone: "text-notified" },
-  detected: { text: "Detection raised", tone: "text-review" },
-  not_detected: { text: "No detection", tone: "text-ack" },
-  failed: { text: "Failed", tone: "text-danger" },
-  cancelled: { text: "Cancelled", tone: "text-ink-500" },
+  scheduled: { text: "Armed", tone: "text-info" },
+  running: { text: "Analysing feed", tone: "text-info" },
+  detected: { text: "Detection raised", tone: "text-warn-ink" },
+  not_detected: { text: "No detection", tone: "text-ok-ink" },
+  failed: { text: "Failed", tone: "text-fire-ink" },
+  cancelled: { text: "Cancelled", tone: "text-fg-3" },
 } as const;
 
 /** "T−32 s" until the trigger, using the server clock. */
@@ -74,7 +70,7 @@ export function countdown(s: Scenario, now: number, offsetMs: number): string | 
 export function liveScenarioLabel(state: ScenarioState): string | null {
   const live = state.items.find(isLiveRun);
   if (!live) return null;
-  return `Demo scenario: ${live.name} · ${live.latest_run?.status === "scheduled" ? "armed" : "analysing feed"}`;
+  return `${live.name} · ${live.latest_run?.status === "scheduled" ? "armed" : "analysing feed"}`;
 }
 
 export function ScenarioControls({
@@ -107,98 +103,135 @@ export function ScenarioControls({
     }
   }
 
-  if (state.status === "loading") return <p className="text-xs text-ink-500">Loading scenarios…</p>;
+  if (state.status === "loading") return <p className="text-[13px] text-fg-2">Loading scenarios…</p>;
   if (!state.enabled) {
     return (
-      <p className="text-xs text-ink-500">
+      <p className="text-[13px] text-fg-2">
         Demo scenarios are disabled on this API (SCENARIOS_ENABLED). Manual clip upload still works.
       </p>
     );
   }
 
   return (
-    <div className="grid gap-2">
-      <ul className="grid gap-1.5">
+    <div className="grid gap-5">
+      <ul className="grid divide-y divide-line rounded-lg border border-line">
         {state.items.map((s) => {
           const run = s.latest_run;
           const live = isLiveRun(s);
           const view = run ? RUN_VIEW[run.status] : null;
           const left = countdown(s, now, state.offsetMs);
           return (
-            <li key={s.id} className="grid gap-1 rounded-sm border border-ink-700 bg-ink-850 px-2.5 py-2">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{s.name}</p>
+            <li key={s.id} className="flex items-center justify-between gap-3 px-4 py-3">
+              <div className="grid min-w-0 gap-0.5">
+                <p className="truncate text-sm font-medium">{s.name}</p>
+                <p className="flex flex-wrap items-center gap-x-2 text-[13px] text-fg-2">
                   <button
                     type="button"
-                    className="font-mono text-[11px] text-ink-500 hover:text-ink-100"
+                    className={`rounded hover:text-fg hover:underline ${FOCUS}`}
                     onClick={() => s.camera_id && onOpenCamera(s.camera_id)}
                   >
-                    {s.camera_code} · triggers after {s.trigger_after_seconds} s
+                    {s.camera_code}
                   </button>
-                </div>
-                <button
-                  type="button"
-                  className={`${BUTTON_SECONDARY} shrink-0 px-2 py-0.5 text-xs`}
-                  disabled={live || busy !== null || !s.camera_id}
-                  onClick={() => void perform(s.id, () => onStart(s.id))}
-                >
-                  {busy === s.id ? "Starting…" : live ? "Running" : "Start"}
-                </button>
-              </div>
-              {view && (
-                <p className={`text-xs ${view.tone}`}>
-                  {view.text}
-                  {left && <span className="ml-1 font-mono tabular-nums">{left}</span>}
-                  {run?.result && run.status !== "scheduled" && (
-                    <span className="ml-1 font-mono text-ink-300">
-                      · peak {Math.max(0, ...Object.values(run.result.classes).map((c) => c.peak_confidence)).toFixed(2)}
+                  {view ? (
+                    <span className={view.tone}>
+                      · {view.text}
+                      {left && <span className="ml-1 tabular-nums">{left}</span>}
                     </span>
+                  ) : (
+                    <span>· triggers after {s.trigger_after_seconds} s</span>
                   )}
                 </p>
-              )}
+              </div>
+              <button
+                type="button"
+                className={`${live ? BUTTON_SECONDARY : BUTTON_PRIMARY} h-8 shrink-0 px-3`}
+                disabled={live || busy !== null || !s.camera_id}
+                onClick={() => void perform(s.id, () => onStart(s.id))}
+              >
+                {busy === s.id ? "Starting…" : live ? "Running" : "Run"}
+              </button>
             </li>
           );
         })}
       </ul>
       {error && <InlineError>{error}</InlineError>}
-      {armedReset ? (
-        <div className="grid grid-cols-2 gap-2">
-          <button type="button" className={`${BUTTON_SECONDARY} text-xs`} onClick={() => setArmedReset(false)}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className={`${BUTTON_SECONDARY} border-danger/70 text-xs text-danger`}
-            disabled={busy !== null}
-            onClick={() => void perform("reset", onReset)}
-          >
-            {busy === "reset" ? "Resetting…" : "Yes, reset demo"}
-          </button>
-        </div>
-      ) : (
-        <button type="button" className={`${BUTTON_SECONDARY} text-xs`} onClick={() => setArmedReset(true)}>
-          Reset demo
-        </button>
-      )}
-      <p className="text-[11px] text-ink-500">
-        {state.disclaimer ??
-          "Licensed sample footage on simulated nodes, analysed by the real detector."}{" "}
-        Detections still need operator review; reset closes scenario data without deleting it.
+      <p className="text-xs text-fg-3">
+        {state.disclaimer ?? "Licensed sample footage on simulated nodes, analysed by the real detector."} Detections
+        still need operator review.
       </p>
+      <div className="flex items-center justify-between gap-3 border-t border-line pt-4">
+        {armedReset ? (
+          <>
+            <p className="text-[13px] text-fg-2">Close all scenario data?</p>
+            <div className="flex gap-2">
+              <button type="button" className={`${BUTTON_SECONDARY} h-8`} onClick={() => setArmedReset(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={`${BUTTON_SECONDARY} h-8 text-fire-ink`}
+                disabled={busy !== null}
+                onClick={() => void perform("reset", onReset)}
+              >
+                {busy === "reset" ? "Resetting…" : "Yes, reset demo"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-[13px] text-fg-2">Reset closes scenario data without deleting it.</p>
+            <button type="button" className={`${BUTTON_SECONDARY} h-8`} onClick={() => setArmedReset(true)}>
+              <Icon name="reset" size={14} />
+              Reset demo
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
+/** Demo scenarios live in one modal, not on the dashboard. */
+export function DemoDialog({
+  state,
+  onClose,
+  onStart,
+  onReset,
+  onOpenCamera,
+}: {
+  state: ScenarioState;
+  onClose: () => void;
+  onStart: (id: string) => Promise<unknown>;
+  onReset: () => Promise<unknown>;
+  onOpenCamera: (cameraId: string) => void;
+}) {
+  return (
+    <Modal title="Demo scenarios" onClose={onClose} width="max-w-[480px]">
+      <ScenarioControls
+        state={state}
+        onStart={async (id) => {
+          await onStart(id);
+          onClose(); // the scenario runs autonomously; the map shows what happens
+        }}
+        onReset={onReset}
+        onOpenCamera={(id) => {
+          onClose();
+          onOpenCamera(id);
+        }}
+      />
+    </Modal>
+  );
+}
+
 const TONE: Record<ActivityEntry["tone"], string> = {
-  info: "bg-notified",
-  alert: "bg-review",
-  incident: "bg-sev-high",
-  ok: "bg-ack",
-  muted: "bg-ink-500",
+  info: "bg-info",
+  alert: "bg-warn",
+  incident: "bg-fire",
+  ok: "bg-ok",
+  muted: "bg-fg-3",
 };
 
-export function ActivityFeed({
+export function ActivityList({
   entries,
   onSelect,
 }: {
@@ -206,11 +239,7 @@ export function ActivityFeed({
   onSelect: (select: NonNullable<ActivityEntry["select"]>) => void;
 }) {
   if (!entries.length) {
-    return (
-      <p className="rounded-sm border border-dashed border-ink-700 px-3 py-4 text-center text-xs text-ink-500">
-        No activity yet. Start a demo scenario or analyze a clip.
-      </p>
-    );
+    return <p className="px-2 py-6 text-center text-[13px] text-fg-2">No activity yet.</p>;
   }
   return (
     <ol aria-label="Activity feed" className="grid">
@@ -220,80 +249,17 @@ export function ActivityFeed({
             type="button"
             disabled={!e.select}
             onClick={() => e.select && onSelect(e.select)}
-            className="grid w-full grid-cols-[3.6rem_0.5rem_1fr] items-start gap-2 border-b border-ink-800 px-1 py-1.5 text-left text-xs hover:bg-ink-850 focus-visible:outline-2 focus-visible:outline-focus disabled:hover:bg-transparent"
+            className={`grid w-full grid-cols-[8px_1fr_auto] items-start gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted disabled:hover:bg-transparent ${FOCUS}`}
           >
-            <span className="font-mono text-ink-500 tabular-nums">{pktTime(e.at)}</span>
-            <span aria-hidden className={`mt-1.5 h-1.5 w-1.5 rounded-full ${TONE[e.tone]}`} />
-            <span className="min-w-0 text-ink-300">
-              {e.code && <span className="mr-1.5 font-mono text-ink-100">{e.code}</span>}
+            <span aria-hidden className={`mt-1.5 h-2 w-2 rounded-full ${TONE[e.tone]}`} />
+            <span className="min-w-0 text-[13px] text-fg">
               {e.text}
+              {e.code && <span className="block text-xs text-fg-3">{e.code}</span>}
             </span>
+            <span className="text-xs text-fg-3 tabular-nums">{pktTime(e.at).slice(0, 5)}</span>
           </button>
         </li>
       ))}
     </ol>
-  );
-}
-
-/** Top-bar entry point for the demo scenarios (popover). */
-export function DemoMenu({
-  state,
-  label,
-  onStart,
-  onReset,
-  onOpenCamera,
-}: {
-  state: ScenarioState;
-  label: string | null;
-  onStart: (id: string) => Promise<unknown>;
-  onReset: () => Promise<unknown>;
-  onOpenCamera: (cameraId: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
-  if (state.status === "ready" && !state.enabled) return null;
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls="demo-scenarios"
-        onClick={() => setOpen((v) => !v)}
-        className={`rounded-md border px-2 py-0.5 text-xs font-medium focus-visible:outline-2 focus-visible:outline-focus ${
-          label ? "border-notified/70 text-notified" : "border-ink-700 bg-ink-800 hover:border-ink-500"
-        }`}
-      >
-        {label ? "● Demo running" : "▶ Demo scenarios"}
-      </button>
-      {open && (
-        <div
-          id="demo-scenarios"
-          role="dialog"
-          aria-label="Demo scenarios"
-          className="absolute top-full right-0 z-30 mt-2 w-[22rem] rounded-md border border-ink-700 bg-ink-900 p-3 shadow-2xl shadow-black/60"
-        >
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-xs font-medium tracking-wider text-ink-300 uppercase">Demo mode · scenarios</p>
-            <button type="button" aria-label="Close demo scenarios" className="px-1 text-xs text-ink-300 hover:text-ink-100" onClick={() => setOpen(false)}>
-              ✕
-            </button>
-          </div>
-          <ScenarioControls
-            state={state}
-            onStart={onStart}
-            onReset={onReset}
-            onOpenCamera={(id) => {
-              setOpen(false);
-              onOpenCamera(id);
-            }}
-          />
-        </div>
-      )}
-    </div>
   );
 }

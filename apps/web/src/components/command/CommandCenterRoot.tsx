@@ -16,7 +16,7 @@ export function CommandCenterRoot() {
   if (!apiBaseUrl || !api) {
     return (
       <main className="mx-auto grid w-full max-w-xl flex-1 content-center gap-4 px-4 py-10">
-        <h1 className="text-xl font-semibold">PehRadar command center</h1>
+        <h1 className="text-xl font-semibold">PehRadar · Karachi Monitoring</h1>
         <ApiStatus />
       </main>
     );

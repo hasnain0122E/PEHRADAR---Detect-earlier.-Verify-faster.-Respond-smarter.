@@ -60,7 +60,9 @@ describe("buildMarkers", () => {
     let specs = buildMarkers({ ...base, incidents: [INCIDENT, resolved] });
     const shown = specs.filter((s) => s.select.kind === "incident").map((s) => s.select.id);
     expect(shown).toEqual([INCIDENT.id]);
-    expect(byKey(specs, `incident:${INCIDENT.id}`).html).toContain("▲");
+    const marker = byKey(specs, `incident:${INCIDENT.id}`);
+    expect(marker.className).toContain("sev-high");
+    expect(marker.html).toContain('class="pr-incident"');
 
     specs = buildMarkers({
       ...base,

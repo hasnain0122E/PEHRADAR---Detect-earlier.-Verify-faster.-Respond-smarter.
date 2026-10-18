@@ -24,7 +24,12 @@ import { CommandCenter } from "./CommandCenter";
 /** MapLibre needs WebGL; this stand-in renders the same marker model as plain buttons. */
 function StubMap(props: OpsMapProps) {
   return (
-    <div data-testid="stub-map" data-route={JSON.stringify(props.route ?? null)} data-focus={props.focus?.key ?? ""}>
+    <div
+      data-testid="stub-map"
+      data-route={JSON.stringify(props.route ?? null)}
+      data-focus={props.focus?.key ?? ""}
+      data-view={props.view}
+    >
       {buildMarkers(props).map((m) => (
         <button key={m.key} type="button" aria-label={m.label} data-classes={m.className} onClick={() => props.onSelect(m.select)}>
           {m.key}
@@ -44,27 +49,49 @@ function clipFile(name = "pos_fire.mp4", size = 1000) {
 }
 
 const details = () => within(screen.getByRole("complementary", { name: "Details" }));
-const rail = () => within(screen.getByRole("navigation", { name: "Operations queues" }));
+const nav = () => within(screen.getByRole("navigation", { name: "Primary" }));
+const statusStrip = () => screen.getByLabelText("City status");
+
+/** Opens a list panel from the navigation rail (Overview, Incidents, Cameras, Stations). */
+async function openList(name: "Overview" | "Incidents" | "Cameras" | "Stations") {
+  fireEvent.click(nav().getByRole("button", { name: new RegExp(`^${name}`) }));
+  return within(await screen.findByRole("region", { name }));
+}
 
 async function openKorangi() {
-  fireEvent.click(await rail().findByRole("button", { name: /Korangi Industrial Area \(simulated\)/ }));
+  const list = await openList("Cameras");
+  fireEvent.click(await list.findByRole("button", { name: /Korangi Industrial Area \(simulated\)/ }));
   return screen.findByRole("button", { name: "Analyze test footage" });
 }
 
+async function openPendingReview() {
+  const list = await openList("Incidents");
+  fireEvent.click(await list.findByRole("button", { name: /Korangi Industrial Area \(simulated\).*awaiting review/ }));
+}
+
 describe("CommandCenter", () => {
+  it("starts on a quiet map: no drawer and no list until something is selected", async () => {
+    renderCenter();
+    await waitFor(() => expect(statusStrip()).toHaveTextContent(/Monitoring nodes\s*2/));
+    expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Cameras" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Demo scenarios" })).toBeNull();
+    expect(await screen.findByText("System online")).toBeInTheDocument();
+  });
+
   it("renders cameras, stations and incidents from the API", async () => {
     renderCenter(fakeApi({ listIncidents: vi.fn().mockResolvedValue([INCIDENT]) }));
 
-    expect(await screen.findByText("Saddar - Empress Market (simulated)")).toBeInTheDocument();
-    expect(screen.getAllByText("Simulated").length).toBeGreaterThan(0);
+    const list = await openList("Cameras");
+    expect(await list.findByText("Saddar - Empress Market (simulated)")).toBeInTheDocument();
     const map = screen.getByTestId("stub-map");
     expect(within(map).getByLabelText(/Fire station: Landhi Fire Station \(available, demo flag/)).toBeInTheDocument();
     expect(within(map).getByLabelText(/Fire station: Orangi Fire Station \(unavailable/)).toBeInTheDocument();
     expect(within(map).getByLabelText(/Incident: FIRE, HIGH severity, Station selected/)).toBeInTheDocument();
-    // Camera with an active incident is marked on the map and in the top bar.
+    // Camera with an active incident is marked on the map and in the status strip.
     expect(within(map).getByLabelText(/Camera: Korangi.*active incident/)).toBeInTheDocument();
-    expect(screen.getByText("1 active incident")).toBeInTheDocument();
-    expect(await screen.findByText("API online")).toBeInTheDocument();
+    await waitFor(() => expect(statusStrip()).toHaveTextContent(/Active incidents\s*1/));
+    expect(nav().getByRole("button", { name: /^Incidents\s*1 need attention/ })).toBeInTheDocument();
   });
 
   it("selecting a camera opens its details and the footage action", async () => {
@@ -73,9 +100,13 @@ describe("CommandCenter", () => {
 
     expect(screen.getByRole("heading", { name: "Korangi Industrial Area (simulated)" })).toBeInTheDocument();
     expect(details().getAllByText("KHI-CAM-03").length).toBeGreaterThan(0);
+    expect(details().getByLabelText(/SIMULATED LIVE FEED: Korangi/)).toBeInTheDocument();
     expect(analyze).toBeDisabled(); // no clip chosen yet
     const map = screen.getByTestId("stub-map");
     expect(within(map).getByLabelText(/Camera: Korangi/).dataset.classes).toContain("is-selected");
+
+    fireEvent.click(details().getByRole("button", { name: "Close details" }));
+    expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
   });
 
   it("rejects an oversized or non-MP4 clip before upload", async () => {
@@ -115,16 +146,17 @@ describe("CommandCenter", () => {
     expect(api.analyzeFootage).toHaveBeenCalledWith(CAMERA_KORANGI.id, expect.any(File), expect.anything());
 
     finish(POSITIVE_RESULT);
-    expect(await screen.findByText(/Evidence review · awaiting operator decision/)).toBeInTheDocument();
+    expect(await screen.findByText("Fire detected")).toBeInTheDocument();
     expect(screen.getByLabelText("FIRE")).toBeInTheDocument();
-    expect(screen.getByText("0.73")).toBeInTheDocument();
+    expect(screen.getByText("73%")).toBeInTheDocument(); // primary metric
     expect(screen.getByText("38 of 57 sampled")).toBeInTheDocument();
     expect(screen.getByText("00:18.7 into the clip")).toBeInTheDocument();
-    expect(screen.getByText(POSITIVE_RESULT.rule)).toBeInTheDocument();
+    expect(screen.getByText("Persistent fire activity detected across consecutive sampled frames.")).toBeInTheDocument();
     expect(screen.getByText(/Automated detection can be wrong/)).toBeInTheDocument();
+    // Model internals stay behind "Detection details".
+    expect(screen.getByText("Detection details").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText(POSITIVE_RESULT.rule)).toBeInTheDocument();
     expect(screen.getByRole("img")).toHaveAttribute("src", `http://api.test${DETECTION_PENDING.evidence_url}`);
-    // Visual alert for the new threat.
-    expect(screen.getByText(/Possible FIRE detected at Korangi/)).toBeInTheDocument();
   });
 
   it("shows a negative result without implying safety", async () => {
@@ -133,14 +165,14 @@ describe("CommandCenter", () => {
     fireEvent.change(screen.getByLabelText("Video clip (.mp4)"), { target: { files: [clipFile("street.mp4")] } });
     fireEvent.click(screen.getByRole("button", { name: "Analyze test footage" }));
 
-    expect(await screen.findByText("No persistent fire or smoke event detected.")).toBeInTheDocument();
-    expect(screen.getByText(/This is not a safety confirmation/)).toBeInTheDocument();
+    expect(await screen.findByText("No persistent fire or smoke detected.")).toBeInTheDocument();
+    expect(screen.getByText("This does not confirm the location is safe.")).toBeInTheDocument();
     expect(screen.getByText(String(NEGATIVE_RESULT.sampled_frames))).toBeInTheDocument();
     expect(screen.getByText("14.5 s")).toBeInTheDocument();
     expect(screen.getByText("0.52")).toBeInTheDocument(); // peak model confidence
     expect(api.confirmDetection).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Analyze another clip" }));
+    fireEvent.click(screen.getByRole("button", { name: "Analyse another clip" }));
     expect(screen.getByRole("button", { name: "Analyze test footage" })).toBeInTheDocument();
   });
 
@@ -151,8 +183,7 @@ describe("CommandCenter", () => {
       confirmDetection: vi.fn().mockImplementation(() => new Promise((r) => (resolveConfirm = r))),
     });
     renderCenter(api);
-    fireEvent.click(await screen.findByRole("tab", { name: /Review/ }));
-    fireEvent.click(await rail().findByRole("button", { name: /Korangi Industrial Area/ }));
+    await openPendingReview();
 
     fireEvent.click(await screen.findByRole("button", { name: "Confirm incident" }));
     expect(screen.getByText(/No one is notified or dispatched/)).toBeInTheDocument();
@@ -163,7 +194,9 @@ describe("CommandCenter", () => {
     expect(api.confirmDetection).toHaveBeenCalledTimes(1);
 
     resolveConfirm(INCIDENT_DETAIL);
-    expect(await screen.findByText(/Incident created. Candidate station: Landhi Fire Station \(7.63 km/)).toBeInTheDocument();
+    expect(await screen.findByText(/Incident created. Landhi Fire Station suggested. No dispatch was sent./)).toBeInTheDocument();
+    expect(details().getByText("Fire incident")).toBeInTheDocument();
+    expect(details().getByText("Landhi Fire Station")).toBeInTheDocument();
     expect(screen.getByText("Candidate station based on geographic proximity. Not a dispatch confirmation.")).toBeInTheDocument();
     expect(details().getAllByText("Station selected").length).toBe(2); // status chip + timeline
     await waitFor(() => expect(api.listIncidents).toHaveBeenCalledTimes(2)); // refreshed after the action
@@ -172,10 +205,9 @@ describe("CommandCenter", () => {
   it("rejects a detection without creating an incident", async () => {
     const api = fakeApi({ listPendingDetections: vi.fn().mockResolvedValue([DETECTION_PENDING]) });
     renderCenter(api);
-    fireEvent.click(await screen.findByRole("tab", { name: /Review/ }));
-    fireEvent.click(await rail().findByRole("button", { name: /Korangi Industrial Area/ }));
+    await openPendingReview();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Reject detection" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Reject" }));
     fireEvent.change(screen.getByLabelText("Reason (optional)"), { target: { value: "sunset glare" } });
     fireEvent.click(screen.getByRole("button", { name: "Yes, reject detection" }));
 
@@ -195,26 +227,25 @@ describe("CommandCenter", () => {
       ),
     });
     renderCenter(api);
-    fireEvent.click(await screen.findByRole("tab", { name: /Review/ }));
-    fireEvent.click(await rail().findByRole("button", { name: /Korangi Industrial Area/ }));
+    await openPendingReview();
     fireEvent.click(await screen.findByRole("button", { name: "Confirm incident" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes, confirm incident" }));
 
     expect(await screen.findByText(/already reviewed, possibly from another console/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open the incident" }));
-    expect(await screen.findByText("Candidate fire station")).toBeInTheDocument();
+    expect(await screen.findByText("Response facility")).toBeInTheDocument();
   });
 
   it("selecting an incident shows its detail and timeline", async () => {
     const api = fakeApi({ listIncidents: vi.fn().mockResolvedValue([INCIDENT]) });
     renderCenter(api);
-    fireEvent.click(await screen.findByRole("tab", { name: /Incidents/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Candidate: Landhi Fire Station/ }));
+    const list = await openList("Incidents");
+    fireEvent.click(await list.findByRole("button", { name: /Candidate: Landhi Fire Station/ }));
 
-    expect(await screen.findByText("Timeline")).toBeInTheDocument();
+    expect(await details().findByText("Timeline")).toBeInTheDocument();
     expect(api.getIncident).toHaveBeenCalledWith(INCIDENT.id, expect.anything());
     for (const label of ["Detected", "Confirmed", "Station selected"]) {
-      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+      expect(details().getAllByText(label).length).toBeGreaterThan(0);
     }
     expect(screen.queryByText("Notified")).not.toBeInTheDocument(); // only states that happened
     expect(screen.getByText(/straight-line distance \(not a driving route or ETA\)/)).toBeInTheDocument();
@@ -232,7 +263,7 @@ describe("CommandCenter", () => {
     expect(await screen.findByText(/Operational data could not be loaded: Cannot reach the API/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => expect(screen.queryByText(/could not be loaded/)).not.toBeInTheDocument());
-    expect(await screen.findByText("Saddar - Empress Market (simulated)")).toBeInTheDocument();
+    await waitFor(() => expect(statusStrip()).toHaveTextContent(/Monitoring nodes\s*2/));
   });
 
   it("reports an upload failure from the operator proxy", async () => {
@@ -248,6 +279,23 @@ describe("CommandCenter", () => {
     fireEvent.click(screen.getByRole("button", { name: "Analyze test footage" }));
 
     expect(await screen.findByText(/Analysis of pos_fire.mp4 failed: Missing or invalid X-Operator-Key/)).toBeInTheDocument();
+  });
+
+  it("switches the map between 2D and 3D from the top bar", async () => {
+    renderCenter();
+    const map = screen.getByTestId("stub-map");
+    expect(map.dataset.view).toBe("3d");
+    fireEvent.click(screen.getByRole("button", { name: "2D" }));
+    expect(map.dataset.view).toBe("2d");
+    expect(screen.getByRole("button", { name: "2D" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("frames a zone on the map when one is chosen", async () => {
+    renderCenter();
+    const zone = await screen.findByRole("combobox", { name: "Zone" });
+    await waitFor(() => expect(within(zone).getByRole("option", { name: "Korangi" })).toBeInTheDocument());
+    fireEvent.change(zone, { target: { value: "Korangi" } });
+    expect(screen.getByTestId("stub-map").dataset.focus).toMatch(/^zone:Korangi:/);
   });
 });
 
@@ -281,30 +329,31 @@ describe("CommandCenter (M5 automated monitoring)", () => {
     const api = renderCenter(fakeApi({ listPendingDetections: pending, listScenarios: scenarios }));
 
     // The run finishes on the next scenario poll (about 2 s); that reloads detections at once.
-    const alert = await within(screen.getByLabelText("Alerts")).findByText(
-      /Possible FIRE detected at Korangi Industrial Area/,
-      {},
-      { timeout: 6000 },
-    );
-    expect(alert).toBeInTheDocument();
+    const toasts = within(screen.getByLabelText("Alerts"));
+    expect(await toasts.findByText("Possible fire detected", {}, { timeout: 6000 })).toBeInTheDocument();
+    expect(toasts.getByText("Korangi Industrial Area")).toBeInTheDocument();
+    expect(toasts.getByText("AI confidence 73%")).toBeInTheDocument();
     expect(api.analyzeFootage).not.toHaveBeenCalled();
     expect(api.confirmDetection).not.toHaveBeenCalled(); // never auto-confirmed
     const map = screen.getByTestId("stub-map");
     expect(within(map).getByLabelText(/Camera: Korangi.*1 detection awaiting review/).dataset.classes).toContain("is-pending");
     expect(map.dataset.focus).toBe(DETECTION_PENDING.id); // the map flies to the alert
-    expect(rail().getByRole("tab", { name: /Review\s*1/ })).toBeInTheDocument();
-    expect(screen.getByLabelText("City status")).toHaveTextContent(/Pending alerts\s*1/);
+    expect(nav().getByRole("button", { name: /^Incidents\s*1 need attention/ })).toBeInTheDocument();
+    expect(statusStrip()).toHaveTextContent(/Pending alerts\s*1/);
+    // Only the notification appears: no panel opens by itself.
+    expect(screen.queryByRole("complementary", { name: "Details" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Review now" }));
+    fireEvent.click(toasts.getByRole("button", { name: "Review incident" }));
 
-    expect(await details().findByText("Evidence review · awaiting operator decision")).toBeInTheDocument();
+    expect(await details().findByText("Fire detected")).toBeInTheDocument();
     expect(details().getByLabelText(/SIMULATED LIVE FEED: Korangi/)).toBeInTheDocument();
     expect(details().getByText(/Automated demo scenario “Korangi industrial fire”/)).toBeInTheDocument();
     expect(details().getByRole("button", { name: "Confirm incident" })).toBeInTheDocument();
-    expect(details().getByRole("button", { name: "Reject detection" })).toBeInTheDocument();
+    expect(details().getByRole("button", { name: "Reject" })).toBeInTheDocument();
+    expect(screen.queryByText("Possible fire detected")).toBeNull(); // the toast is consumed
   }, 10000);
 
-  it("confirming shows the suggested road route and draws it on the map", async () => {
+  it("shows the suggested road route on demand and draws it on the map", async () => {
     const withRoute = { ...INCIDENT_DETAIL, route: ROUTE_OK };
     renderCenter(
       fakeApi({
@@ -313,31 +362,45 @@ describe("CommandCenter (M5 automated monitoring)", () => {
         getIncident: vi.fn().mockResolvedValue(withRoute),
       }),
     );
-    fireEvent.click(await rail().findByRole("tab", { name: /Review/ }));
-    fireEvent.click(await rail().findByRole("button", { name: /FIRE/ }));
+    await openPendingReview();
     fireEvent.click(await details().findByRole("button", { name: "Confirm incident" }));
     fireEvent.click(details().getByRole("button", { name: "Yes, confirm incident" }));
 
-    expect(await details().findByText(/Suggested response route: 9.1 km by road, about 11 min \(estimate\)/)).toBeInTheDocument();
-    expect(details().getByText("Road distance")).toBeInTheDocument();
+    expect(await details().findByText("Road distance")).toBeInTheDocument();
+    expect(details().getByText("9.1 km")).toBeInTheDocument();
     expect(details().getByText("11 min")).toBeInTheDocument();
-    expect(details().getByText("Route is an estimate. Not a dispatch confirmation.")).toBeInTheDocument();
+    expect(details().getByText("Suggested response route. Estimate only — not a dispatch confirmation.")).toBeInTheDocument();
     expect(details().queryByText(/dispatched/i)).toBeNull();
+    expect(JSON.parse(screen.getByTestId("stub-map").dataset.route!)).toBeNull(); // not until asked
+
+    fireEvent.click(details().getByRole("button", { name: "Show route" }));
     await waitFor(() =>
       expect(JSON.parse(screen.getByTestId("stub-map").dataset.route!)).toEqual(ROUTE_OK.geometry!.coordinates),
     );
+    const summary = within(screen.getByLabelText("Route summary"));
+    expect(summary.getByText("Landhi Fire Station")).toBeInTheDocument();
+    expect(summary.getByText("Road estimate · not a dispatch")).toBeInTheDocument();
+
+    fireEvent.click(summary.getByRole("button", { name: "Exit route view" }));
+    expect(JSON.parse(screen.getByTestId("stub-map").dataset.route!)).toBeNull();
+    expect(screen.queryByLabelText("Route summary")).toBeNull();
   });
 
-  it("starts a scenario and resets the demo from the overview", async () => {
+  it("runs a scenario and resets the demo from the demo dialog", async () => {
     const api = renderCenter();
-    const start = await details().findByRole("button", { name: "Start" });
-    fireEvent.click(start);
+    fireEvent.click(nav().getByRole("button", { name: "Demo" }));
+    const dialog = within(await screen.findByRole("dialog", { name: "Demo scenarios" }));
+    fireEvent.click(await dialog.findByRole("button", { name: "Run" }));
     await waitFor(() => expect(api.startScenario).toHaveBeenCalledWith(SCENARIO_FIRE.id));
+    // The dialog closes: the scenario now runs on its own.
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Demo scenarios" })).toBeNull());
 
-    fireEvent.click(details().getByRole("button", { name: "Reset demo" }));
+    fireEvent.click(nav().getByRole("button", { name: "Demo" }));
+    const again = within(await screen.findByRole("dialog", { name: "Demo scenarios" }));
+    fireEvent.click(again.getByRole("button", { name: "Reset demo" }));
     expect(api.resetScenarios).not.toHaveBeenCalled(); // two-step
     const loadsBefore = vi.mocked(api.listIncidents).mock.calls.length;
-    fireEvent.click(details().getByRole("button", { name: "Yes, reset demo" }));
+    fireEvent.click(again.getByRole("button", { name: "Yes, reset demo" }));
     await waitFor(() => expect(api.resetScenarios).toHaveBeenCalledOnce());
     // Closed scenario incidents show at once, not at the next 10 s poll.
     await waitFor(() => expect(vi.mocked(api.listIncidents).mock.calls.length).toBeGreaterThan(loadsBefore));
@@ -345,17 +408,25 @@ describe("CommandCenter (M5 automated monitoring)", () => {
 
   it("shows city status counts computed from the API data", async () => {
     renderCenter(fakeApi({ listIncidents: vi.fn().mockResolvedValue([INCIDENT]) }));
-    const bar = await screen.findByLabelText("City status");
-    await waitFor(() => expect(bar).toHaveTextContent(/Monitoring nodes\s*2/));
-    expect(bar).toHaveTextContent(/Public \/ demo feeds\s*1/);
-    expect(bar).toHaveTextContent(/Active incidents\s*1/);
-    expect(bar).toHaveTextContent(/Available facilities\s*1\/2/);
+    await waitFor(() => expect(statusStrip()).toHaveTextContent(/Monitoring nodes\s*2/));
+    expect(statusStrip()).toHaveTextContent(/Online\s*2/);
+    expect(statusStrip()).toHaveTextContent(/Active incidents\s*1/);
+    expect(statusStrip()).toHaveTextContent(/Response facilities\s*1\/2/);
   });
 
   it("a camera without a stream shows the unavailable state and its provenance", async () => {
     renderCenter();
-    fireEvent.click(await rail().findByRole("button", { name: /Saddar - Empress Market/ }));
+    const list = await openList("Cameras");
+    fireEvent.click(await list.findByRole("button", { name: /Saddar - Empress Market/ }));
     expect(await details().findByText(/Feed unavailable in hackathon environment: simulated coverage node/)).toBeInTheDocument();
     expect(details().getByText("Simulated coverage node")).toBeInTheDocument();
+  });
+
+  it("lists items needing attention in the overview", async () => {
+    renderCenter(fakeApi({ listPendingDetections: vi.fn().mockResolvedValue([DETECTION_PENDING]) }));
+    const overview = await openList("Overview");
+    expect(await overview.findByText("Needs attention")).toBeInTheDocument();
+    fireEvent.click(overview.getByRole("button", { name: /Korangi Industrial Area \(simulated\).*awaiting review/ }));
+    expect(await details().findByText("Fire detected")).toBeInTheDocument();
   });
 });

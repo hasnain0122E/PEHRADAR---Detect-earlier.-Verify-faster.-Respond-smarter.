@@ -26,6 +26,7 @@ describe("cityStats", () => {
     );
     expect(stats).toEqual({
       nodes: 4,
+      online: 3,
       feeds: 2,
       feedsOnline: 1,
       simulated: 1,

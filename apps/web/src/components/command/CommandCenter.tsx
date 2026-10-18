@@ -1,39 +1,42 @@
 "use client";
 
-import type React from "react";
-import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentType, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type { OpsApi } from "@/lib/api/client";
 import type { Camera, Detection, Incident, IncidentDetail, Scenario } from "@/lib/api/types";
-import { buildActivity, cityStats, type LocalEvent } from "@/lib/city";
-import { EVENT_LABEL, isActiveIncident } from "@/lib/ops";
+import { buildActivity, cityStats, isLiveRun, type LocalEvent } from "@/lib/city";
+import { confidencePct, isActiveIncident } from "@/lib/ops";
 
-import { type MapFocus, OpsMap, type OpsMapProps } from "../map/OpsMap";
+import { Icon } from "../icons";
+import { boundsOf, type MapFocus, type MapView, OpsMap, type OpsMapProps, prefersReducedMotion } from "../map/OpsMap";
 import { useApiHealth } from "../useApiHealth";
 import { type FeedOverride, feedMode } from "./CameraFeed";
 import { type AnalysisState, CameraPanel, isRunning } from "./CameraPanel";
-import { ActivityFeed, CityStatusBar, DemoMenu, liveScenarioLabel, ScenarioControls } from "./CityPanels";
+import { ActivityList, DemoDialog, liveScenarioLabel, StatusStrip } from "./CityPanels";
 import { DetectionReview } from "./DetectionReview";
-import { IncidentPanel, StationPanel } from "./IncidentPanel";
-import { LeftRail, type RailTab } from "./LeftRail";
+import { etaMin, IncidentPanel, StationPanel } from "./IncidentPanel";
+import { ListPanel } from "./ListPanels";
+import { type NavView, NavRail } from "./NavRail";
 import type { Selection } from "./selection";
-import { DemoBanner, TopBar } from "./TopBar";
-import { BUTTON_SECONDARY, InlineError } from "./ui";
+import { ALL_ZONES, SettingsDialog, TopBar } from "./TopBar";
+import { BUTTON_PRIMARY, BUTTON_SECONDARY, FOCUS, ICON_BUTTON, InlineError, Skeleton } from "./ui";
 import { useAlertSound } from "./useAlertSound";
 import { describeError, useOpsData } from "./useOpsData";
 import { useScenarios } from "./useScenarios";
 
 interface Alert {
   id: string;
-  text: string;
+  kind: "detection" | "incident";
+  title: string;
+  location: string;
+  detail: string | null;
   select: Selection;
 }
-
-type Pane = "queue" | "map" | "details";
 
 // Only ever called from event handlers.
 const timestamp = () => Date.now();
 const isoNow = () => new Date().toISOString();
+const noopSubscribe = () => () => {};
 
 /** Scenario clip currently shown on a demo-stream node (after its trigger, until reset). */
 function scenarioOverride(scenarios: Scenario[], cameraId: string, mediaSrc: (u: string) => string | null): FeedOverride | null {
@@ -45,6 +48,8 @@ function scenarioOverride(scenarios: Scenario[], cameraId: string, mediaSrc: (u:
     ? { src, note: `Scenario clip “${s.name}”: licensed sample footage on a simulated node. Not Karachi CCTV.` }
     : null;
 }
+
+const EVENT_WORD = { fire: "fire", smoke: "smoke", fire_smoke: "fire and smoke" } as const;
 
 export interface CommandCenterProps {
   api: OpsApi;
@@ -58,8 +63,14 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
   const { state: health, recheck } = useApiHealth(apiBaseUrl, fetchImpl);
   const sound = useAlertSound();
   const [selection, setSelection] = useState<Selection | null>(null);
-  const [railTab, setRailTab] = useState<RailTab>("cameras");
-  const [pane, setPane] = useState<Pane>("map");
+  const [nav, setNav] = useState<NavView>("monitor");
+  const [demoOpen, setDemoOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const reducedMotion = useSyncExternalStore(noopSubscribe, prefersReducedMotion, () => false);
+  const [viewChoice, setViewChoice] = useState<MapView | null>(null);
+  const view = viewChoice ?? (reducedMotion ? "2d" : "3d");
+  const [zone, setZone] = useState(ALL_ZONES);
+  const [routeFor, setRouteFor] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AnalysisState | null>(null);
   const [detections, setDetections] = useState<Record<string, Detection>>({});
   const [confirmed, setConfirmed] = useState<IncidentDetail | null>(null);
@@ -89,6 +100,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
     setAlerts((prev) => [alert, ...prev.filter((a) => a.id !== alert.id)].slice(0, 3));
     playRef.current();
   }, []);
+  const dismiss = useCallback((id: string) => setAlerts((prev) => prev.filter((a) => a.id !== id)), []);
 
   const onUpdate = useCallback(
     ({ incidents, pending }: { incidents: Incident[]; pending: Detection[] }) => {
@@ -107,7 +119,10 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
         if (camera && !busy) setFocus({ key: d.id, lng: camera.longitude, lat: camera.latitude });
         raise({
           id: `d:${d.id}`,
-          text: `Possible ${EVENT_LABEL[d.event_type]} detected at ${camera?.name ?? "a camera"}. Operator review required.`,
+          kind: "detection",
+          title: `Possible ${EVENT_WORD[d.event_type]} detected`,
+          location: camera?.location_label ?? "Unknown camera",
+          detail: `AI confidence ${confidencePct(d.confidence)}`,
           select: { kind: "detection", id: d.id },
         });
       }
@@ -116,7 +131,10 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
         known.add(`i:${i.id}`);
         raise({
           id: `i:${i.id}`,
-          text: `New confirmed ${EVENT_LABEL[i.event_type]} incident at ${i.camera.location_label}.`,
+          kind: "incident",
+          title: `New ${EVENT_WORD[i.event_type]} incident`,
+          location: i.camera.location_label,
+          detail: null,
           select: { kind: "incident", id: i.id },
         });
       }
@@ -131,6 +149,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
   const resetScenarios = useCallback(async () => {
     const result = await resetScenarioData();
     await refresh();
+    setAlerts([]);
     return result;
   }, [resetScenarioData, refresh]);
   useEffect(() => {
@@ -141,7 +160,6 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
     (next: Selection | null) => {
       setSelection(next);
       setDetectionError(null);
-      if (next) setPane("details");
       if (next?.kind !== "incident") setNotice(null);
       if (next?.kind === "detection") {
         logLocal({ key: `local:review:${next.id}:${timestamp()}`, text: "Operator opened evidence review", tone: "info", select: next });
@@ -201,24 +219,15 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
           setAnalysis({
             ...base,
             phase: "error",
-            message: `A detection was stored and is waiting in the Review queue, but loading it failed (${describeError(err, "unknown error")}).`,
+            message: `A detection was stored and is waiting under Incidents › Awaiting review, but loading it failed (${describeError(err, "unknown error")}).`,
           });
-          setRailTab("review");
           void refresh();
           return;
         }
         setDetections((prev) => ({ ...prev, [id]: detection }));
         setAnalysis(null);
-        setRailTab("review");
+        // The evidence drawer opens directly, so the alert is the sound only.
         select({ kind: "detection", id });
-        setAlerts((prev) => [
-          {
-            id: `d:${id}`,
-            text: `Possible ${EVENT_LABEL[detection.event_type]} detected at ${camera.name}. Evidence is open for review.`,
-            select: { kind: "detection" as const, id },
-          },
-          ...prev,
-        ].slice(0, 3));
         playRef.current();
         void refresh();
       } else {
@@ -233,22 +242,14 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
     const incident = await api.confirmDetection(d.id);
     seen.current?.add(`i:${incident.id}`);
     setDetections((prev) => ({ ...prev, [d.id]: { ...d, review_status: "confirmed" } }));
-    setAlerts((prev) => prev.filter((a) => a.id !== `d:${d.id}`));
+    dismiss(`d:${d.id}`);
     setConfirmed(incident);
     setIncidentDetail(incident);
-    setRailTab("incidents");
     select({ kind: "incident", id: incident.id });
-    const route = incident.route;
-    const routeText =
-      route?.status === "ok"
-        ? ` Suggested response route: ${route.distance_km.toFixed(1)} km by road, about ${Math.max(1, Math.round(route.duration_min))} min (estimate).`
-        : route
-          ? " Road route unavailable; straight-line distance shown."
-          : "";
     setNotice({
       incidentId: incident.id,
       text: incident.station_selection
-        ? `Incident created. Candidate station: ${incident.station_selection.station.name} (${incident.station_selection.distance_km.toFixed(2)} km straight-line).${routeText} No dispatch was sent.`
+        ? `Incident created. ${incident.station_selection.station.name} suggested. No dispatch was sent.`
         : "Incident created. No fire station is marked available in the demo data.",
     });
     void refresh();
@@ -264,7 +265,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
       tone: "muted",
       select: { kind: "detection", id: d.id },
     });
-    setAlerts((prev) => prev.filter((a) => a.id !== `d:${d.id}`));
+    dismiss(`d:${d.id}`);
     void refresh();
   }
 
@@ -284,6 +285,10 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
       }),
     [data.cameras, data.incidents, data.pending, scenarios.items, localEvents],
   );
+  const zones = useMemo(
+    () => [...new Set(data.cameras.map((c) => c.district).filter((d): d is string => !!d))].sort(),
+    [data.cameras],
+  );
   const scenarioCameraIds = useMemo(
     () => scenarios.items.filter((s) => s.latest_run?.status === "running" && s.camera_id).map((s) => s.camera_id!),
     [scenarios.items],
@@ -300,9 +305,7 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
   };
   const scenarioNoteFor = (cameraId: string) => {
     const s = scenarios.items.find((x) => x.camera_id === cameraId);
-    return s
-      ? `Demo-scenario node: “${s.name}” plays licensed sample footage here and runs it through the real detector. Start it from Demo scenarios in the top bar.`
-      : null;
+    return s ? `Demo scenario “${s.name}” plays licensed sample footage on this node. Run it from Demo.` : null;
   };
   const originNoteFor = (d: Detection) => {
     const source = d.details.source;
@@ -312,51 +315,41 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
     }
     return source?.kind === "upload" ? "Operator-uploaded test clip" : "Test clip";
   };
-  const selectedRoute =
-    selection?.kind === "incident" &&
-    incidentDetail?.id === selection.id &&
-    incidentDetail.route?.status === "ok"
-      ? (incidentDetail.route.geometry?.coordinates ?? null)
-      : null;
-  const openFromActivity = (s: NonNullable<(typeof activity)[number]["select"]>) => {
-    setRailTab(s.kind === "incident" ? "incidents" : s.kind === "detection" ? "review" : railTab);
-    select(s);
-  };
-  const busyCamera = isRunning(analysis)
-    ? data.cameras.find((c) => c.id === analysis?.cameraId)
-    : undefined;
+
+  // Route mode: only for the selected incident, only after "Show route".
+  const routeIncident =
+    selection?.kind === "incident" && routeFor === selection.id && incidentDetail?.id === selection.id ? incidentDetail : null;
+  const shownRoute = routeIncident?.route?.status === "ok" ? routeIncident.route : null;
+  const selectedRoute = shownRoute?.geometry?.coordinates ?? null;
+
+  const busyCamera = isRunning(analysis) ? data.cameras.find((c) => c.id === analysis?.cameraId) : undefined;
+
+  function chooseZone(next: string) {
+    setZone(next);
+    const inZone = data.cameras.filter((c) => next === ALL_ZONES || c.district === next);
+    const points = [...inZone, ...(next === ALL_ZONES ? data.stations : [])].map((x) => [x.longitude, x.latitude] as [number, number]);
+    if (!points.length) return;
+    const [lng, lat] = points[0];
+    setFocus({ key: `zone:${next}:${timestamp()}`, lng, lat, bounds: boundsOf(points) });
+  }
 
   function renderPanel() {
-    if (!selection) {
-      return (
-        <Overview
-          pending={data.pending.length}
-          active={activeIncidents}
-          scenarios={
-            <ScenarioControls
-              state={scenarios}
-              onStart={startScenario}
-              onReset={resetScenarios}
-              onOpenCamera={(id) => select({ kind: "camera", id })}
-            />
-          }
-          activity={<ActivityFeed entries={activity.slice(0, 8)} onSelect={openFromActivity} />}
-        />
-      );
-    }
+    if (!selection) return null;
     switch (selection.kind) {
       case "camera": {
         const camera = data.cameras.find((c) => c.id === selection.id);
         if (!camera) return <InlineError>Camera not found.</InlineError>;
+        const pendingHere = data.pending.filter((d) => d.camera_id === camera.id);
         return (
           <CameraPanel
+            key={camera.id}
             camera={camera}
             analysis={analysis}
             busyCameraName={busyCamera && busyCamera.id !== camera.id ? busyCamera.name : null}
-            pendingCount={data.pending.filter((d) => d.camera_id === camera.id).length}
+            pendingCount={pendingHere.length}
             onAnalyze={(file) => void analyze(camera, file)}
             onReset={() => setAnalysis(null)}
-            onOpenReview={() => setRailTab("review")}
+            onOpenReview={() => pendingHere[0] && select({ kind: "detection", id: pendingHere[0].id })}
             feed={feedFor(camera)}
             lastActivity={lastActivityFor(camera.id)}
             scenarioNote={scenarioNoteFor(camera.id)}
@@ -365,7 +358,14 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
       }
       case "detection": {
         if (!selectedDetection) {
-          return detectionError ? <InlineError>{detectionError}</InlineError> : <PanelSkeleton />;
+          return detectionError ? (
+            <InlineError>{detectionError}</InlineError>
+          ) : (
+            <div className="grid gap-3" aria-label="Loading">
+              <Skeleton className="h-6 w-2/3" />
+              <Skeleton className="aspect-video" />
+            </div>
+          );
         }
         const reviewCamera = data.cameras.find((c) => c.id === selectedDetection.camera_id);
         return (
@@ -394,6 +394,8 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
             notice={notice?.incidentId === selection.id ? notice.text : null}
             onSelectStation={(id) => select({ kind: "station", id })}
             onLoaded={setIncidentDetail}
+            routeShown={routeFor === selection.id}
+            onToggleRoute={() => setRouteFor((r) => (r === selection.id ? null : selection.id))}
           />
         );
       case "station": {
@@ -403,128 +405,149 @@ export function CommandCenter({ api, apiBaseUrl, MapComponent = OpsMap, fetchImp
     }
   }
 
-  const paneClass = (p: Pane) => (pane === p ? "flex" : "hidden lg:flex");
+  const listOpen = nav !== "monitor";
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col">
-      <DemoBanner />
-      <TopBar
-        health={health}
-        onRetryHealth={recheck}
-        lastSync={data.lastSync}
-        pendingCount={data.pending.length}
-        activeIncidents={activeIncidents}
-        analyzing={isRunning(analysis)}
-        sound={sound}
-        demo={
-          <DemoMenu
-            state={scenarios}
-            label={liveScenarioLabel(scenarios)}
-            onStart={startScenario}
-            onReset={resetScenarios}
-            onOpenCamera={(id) => select({ kind: "camera", id })}
-          />
-        }
+    <div className="flex h-dvh min-h-0">
+      <NavRail
+        view={nav}
+        onView={(v) => setNav((cur) => (cur === v && v !== "monitor" ? "monitor" : v))}
+        attention={data.pending.length + activeIncidents}
+        urgent={activeIncidents > 0}
+        demoActive={scenarios.items.some(isLiveRun)}
+        onDemo={() => setDemoOpen(true)}
+        onSettings={() => setSettingsOpen(true)}
       />
-      <CityStatusBar stats={stats} scenarioLive={liveScenarioLabel(scenarios)} />
-      <AlertStrip
-        alerts={alerts}
-        onOpen={(a) => {
-          setRailTab(a.select.kind === "incident" ? "incidents" : "review");
-          select(a.select);
-          setAlerts((prev) => prev.filter((x) => x.id !== a.id));
-        }}
-        onDismiss={(id) => setAlerts((prev) => prev.filter((x) => x.id !== id))}
-      />
-      {data.status === "error" && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-danger/40 bg-danger/10 px-4 py-2 text-sm text-danger">
-          <span role="alert">Operational data could not be loaded: {data.error}</span>
-          <button type="button" className={BUTTON_SECONDARY} onClick={() => void refresh()}>
-            Retry
-          </button>
-        </div>
-      )}
-      {data.status === "ready" && data.error && (
-        <p className="border-b border-review/40 bg-review/10 px-4 py-1 text-xs text-review">
-          Data may be out of date: the last refresh failed ({data.error}).
-        </p>
-      )}
 
-      <div role="tablist" aria-label="Screen area" className="grid grid-cols-3 border-b border-ink-700 bg-ink-900 lg:hidden">
-        {(["queue", "map", "details"] as Pane[]).map((p) => (
-          <button
-            key={p}
-            type="button"
-            role="tab"
-            aria-selected={pane === p}
-            onClick={() => setPane(p)}
-            className={`py-2 text-sm capitalize ${pane === p ? "border-b-2 border-focus text-ink-100" : "text-ink-300"}`}
-          >
-            {p === "queue" ? "Queues" : p}
-          </button>
-        ))}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <TopBar
+          health={health}
+          onRetryHealth={recheck}
+          lastSync={data.lastSync}
+          zones={zones}
+          zone={zone}
+          onZone={chooseZone}
+          view={view}
+          onView={setViewChoice}
+          sound={sound}
+          activity={<ActivityList entries={activity.slice(0, 10)} onSelect={select} />}
+          onOpenAbout={() => setSettingsOpen(true)}
+        />
+        <StatusStrip stats={stats} scenarioLive={liveScenarioLabel(scenarios)} />
+        {data.status === "error" && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line bg-fire-soft px-6 py-2 text-[13px] text-fire-ink">
+            <span role="alert">Operational data could not be loaded: {data.error}</span>
+            <button type="button" className={`${BUTTON_SECONDARY} h-8`} onClick={() => void refresh()}>
+              Retry
+            </button>
+          </div>
+        )}
+        {data.status === "ready" && data.error && (
+          <p className="border-b border-line bg-warn-soft px-6 py-1.5 text-[13px] text-warn-ink">
+            Data may be out of date: the last refresh failed ({data.error}).
+          </p>
+        )}
+
+        <main className="relative flex min-h-0 flex-1">
+          <section aria-label="Karachi operations map" className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+            <MapComponent
+              cameras={data.cameras}
+              stations={data.stations}
+              incidents={data.incidents}
+              pending={data.pending}
+              analyzingCameraId={isRunning(analysis) ? (analysis?.cameraId ?? null) : null}
+              scenarioCameraIds={scenarioCameraIds}
+              selection={selection}
+              route={selectedRoute}
+              focus={focus}
+              view={view}
+              onSelect={select}
+            />
+
+            {listOpen && (
+              <ListPanel
+                view={nav}
+                loading={data.status === "loading"}
+                onClose={() => setNav("monitor")}
+                cameras={data.cameras}
+                stations={data.stations}
+                pending={data.pending}
+                incidents={data.incidents}
+                selection={selection}
+                analyzingCameraId={isRunning(analysis) ? (analysis?.cameraId ?? null) : null}
+                onSelect={select}
+                activity={activity}
+              />
+            )}
+
+            <Toasts
+              alerts={alerts}
+              onOpen={(a) => {
+                select(a.select);
+                dismiss(a.id);
+              }}
+              onDismiss={dismiss}
+            />
+
+            {shownRoute && routeIncident && (
+              <div
+                aria-label="Route summary"
+                className={`pr-toast absolute bottom-10 z-10 grid w-60 gap-3 rounded-xl border border-line bg-surface p-4 shadow-float ${
+                  listOpen ? "left-[352px] max-lg:left-4" : "left-4"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="grid gap-0.5">
+                    <p className="flex items-center gap-1.5 text-xs font-medium text-info">
+                      <Icon name="route" size={14} />
+                      Suggested response
+                    </p>
+                    <p className="text-sm font-semibold">{routeIncident.station_selection?.station.name ?? "Candidate station"}</p>
+                  </div>
+                  <button type="button" aria-label="Exit route view" className={`${ICON_BUTTON} -mt-1 -mr-1 h-7 w-7`} onClick={() => setRouteFor(null)}>
+                    <Icon name="x" size={16} />
+                  </button>
+                </div>
+                <p className="flex items-baseline gap-4">
+                  <span className="text-[22px] leading-7 font-semibold tabular-nums">{shownRoute.distance_km.toFixed(1)} km</span>
+                  <span className="text-[22px] leading-7 font-semibold tabular-nums">{etaMin(shownRoute)} min</span>
+                </p>
+                <p className="text-xs text-fg-2">Road estimate · not a dispatch</p>
+              </div>
+            )}
+          </section>
+
+          {selection && (
+            <aside
+              aria-label="Details"
+              className="pr-drawer absolute inset-y-0 right-0 z-20 flex w-full max-w-[420px] min-h-0 flex-col border-l border-line bg-surface shadow-float lg:relative lg:w-[400px] lg:shadow-none xl:w-[420px]"
+            >
+              <div className="flex shrink-0 justify-end px-3 pt-3">
+                <button type="button" aria-label="Close details" onClick={() => setSelection(null)} className={ICON_BUTTON}>
+                  <Icon name="x" size={18} />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">{renderPanel()}</div>
+            </aside>
+          )}
+        </main>
       </div>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)_400px] 2xl:grid-cols-[340px_minmax(0,1fr)_460px]">
-        <aside className={`${paneClass("queue")} min-h-0 flex-col border-r border-ink-700`}>
-          <LeftRail
-            tab={railTab}
-            onTab={setRailTab}
-            cameras={data.cameras}
-            pending={data.pending}
-            incidents={data.incidents}
-            selection={selection}
-            analyzingCameraId={isRunning(analysis) ? (analysis?.cameraId ?? null) : null}
-            onSelect={select}
-            loading={data.status === "loading"}
-            activity={activity}
-          />
-        </aside>
-        <section aria-label="Karachi operations map" className={`${paneClass("map")} min-h-[320px] flex-col`}>
-          <MapComponent
-            cameras={data.cameras}
-            stations={data.stations}
-            incidents={data.incidents}
-            pending={data.pending}
-            analyzingCameraId={isRunning(analysis) ? (analysis?.cameraId ?? null) : null}
-            scenarioCameraIds={scenarioCameraIds}
-            selection={selection}
-            route={selectedRoute}
-            focus={focus}
-            onSelect={(s) => {
-              setRailTab(s.kind === "incident" ? "incidents" : s.kind === "detection" ? "review" : railTab);
-              select(s);
-            }}
-          />
-        </section>
-        <aside
-          aria-label="Details"
-          className={`${paneClass("details")} min-h-0 flex-col border-l border-ink-700 bg-ink-900`}
-        >
-          {selection && (
-            <div className="flex justify-end border-b border-ink-700 px-2 py-1">
-              <button
-                type="button"
-                onClick={() => setSelection(null)}
-                className="rounded px-2 py-0.5 text-xs text-ink-300 hover:text-ink-100 focus-visible:outline-2 focus-visible:outline-focus"
-              >
-                Close ✕
-              </button>
-            </div>
-          )}
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">{renderPanel()}</div>
-        </aside>
-      </main>
-
-      <footer className="flex flex-wrap items-center justify-between gap-x-4 gap-y-0.5 border-t border-ink-700 bg-ink-900 px-4 py-1 text-[11px] text-ink-500">
-        <span>Decision support only · every detection needs operator confirmation · no notification or dispatch is sent</span>
-        <span>Stations, roads and routes © OpenStreetMap contributors (ODbL) · routes by OSRM, estimates only</span>
-      </footer>
+      {demoOpen && (
+        <DemoDialog
+          state={scenarios}
+          onClose={() => setDemoOpen(false)}
+          onStart={startScenario}
+          onReset={resetScenarios}
+          onOpenCamera={(id) => select({ kind: "camera", id })}
+        />
+      )}
+      {settingsOpen && <SettingsDialog sound={sound} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
 
-function AlertStrip({
+function Toasts({
   alerts,
   onOpen,
   onDismiss,
@@ -534,89 +557,33 @@ function AlertStrip({
   onDismiss: (id: string) => void;
 }) {
   return (
-    <div aria-live="assertive" aria-label="Alerts">
-      {alerts.map((a) => (
-        <div
-          key={a.id}
-          className="pr-flash flex flex-wrap items-center justify-between gap-2 border-b border-review/50 bg-review/10 px-4 py-1.5 text-sm"
-        >
-          <span className="flex items-center gap-2 font-medium text-review">
-            <span aria-hidden className="h-2 w-2 rotate-45 bg-review" />
-            {a.text}
-          </span>
-          <span className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => onOpen(a)}
-              className="rounded-md border border-review bg-review px-2.5 py-0.5 text-xs font-semibold text-ink-950 hover:bg-review/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
-            >
-              {a.select.kind === "incident" ? "Open incident" : "Review now"}
+    <div aria-live="assertive" aria-label="Alerts" className="pointer-events-none absolute top-4 right-4 z-30 grid w-[320px] gap-2">
+      {alerts.map((a) => {
+        const incident = a.kind === "incident";
+        return (
+          <div
+            key={a.id}
+            className="pr-toast pointer-events-auto grid gap-3 rounded-xl border border-line bg-surface p-4 shadow-float"
+          >
+            <div className="flex items-start gap-3">
+              <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${incident ? "bg-fire-soft text-fire" : "bg-warn-soft text-warn-ink"}`}>
+                <Icon name="flame" size={16} />
+              </span>
+              <div className="grid min-w-0 flex-1 gap-0.5">
+                <p className="text-sm font-semibold">{a.title}</p>
+                <p className="truncate text-[13px] text-fg-2">{a.location}</p>
+                {a.detail && <p className="text-[13px] text-fg-2">{a.detail}</p>}
+              </div>
+              <button type="button" aria-label="Dismiss alert" onClick={() => onDismiss(a.id)} className={`${ICON_BUTTON} -mt-1 -mr-1 h-7 w-7`}>
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+            <button type="button" onClick={() => onOpen(a)} className={`${BUTTON_PRIMARY} h-8 ${FOCUS}`}>
+              {incident ? "Open incident" : "Review incident"}
             </button>
-            <button
-              type="button"
-              aria-label="Dismiss alert"
-              onClick={() => onDismiss(a.id)}
-              className="rounded px-1.5 text-xs text-ink-300 hover:text-ink-100"
-            >
-              ✕
-            </button>
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function PanelSkeleton() {
-  return (
-    <div className="grid gap-3" aria-label="Loading">
-      <div className="h-6 w-2/3 animate-pulse rounded bg-ink-850" />
-      <div className="aspect-video animate-pulse rounded-md bg-ink-850" />
-    </div>
-  );
-}
-
-function Overview({
-  pending,
-  active,
-  scenarios,
-  activity,
-}: {
-  pending: number;
-  active: number;
-  scenarios: React.ReactNode;
-  activity: React.ReactNode;
-}) {
-  return (
-    <div className="grid gap-5 text-sm">
-      <div>
-        <p className="text-xs font-medium tracking-wider text-ink-300 uppercase">Karachi Fire Department</p>
-        <h2 className="mt-1 text-lg font-semibold">City monitoring overview</h2>
-      </div>
-      <dl className="grid grid-cols-2 gap-2">
-        <div className="rounded-sm border border-ink-700 bg-ink-850 p-3">
-          <dt className="text-xs text-ink-300">Awaiting review</dt>
-          <dd className={`font-mono text-2xl tabular-nums ${pending ? "text-review" : ""}`}>{pending}</dd>
-        </div>
-        <div className="rounded-sm border border-ink-700 bg-ink-850 p-3">
-          <dt className="text-xs text-ink-300">Active incidents</dt>
-          <dd className={`font-mono text-2xl tabular-nums ${active ? "text-sev-high" : ""}`}>{active}</dd>
-        </div>
-      </dl>
-      <section className="grid gap-2" aria-label="Demo scenarios">
-        <h3 className="text-xs font-medium tracking-wider text-ink-300 uppercase">Demo scenarios</h3>
-        {scenarios}
-      </section>
-      <section className="grid gap-1" aria-label="Recent activity">
-        <h3 className="text-xs font-medium tracking-wider text-ink-300 uppercase">Recent activity</h3>
-        {activity}
-      </section>
-      <p className="border-l-2 border-sim pl-3 text-xs text-ink-300">
-        No official or Safe City CCTV is connected. Coverage nodes are simulated placements on
-        mapped roads; demo-stream nodes loop licensed sample footage. The AI is decision support and
-        an operator confirms every incident. Station availability is demonstration data; the
-        candidate station is chosen by straight-line distance and the route is an estimate.
-      </p>
+          </div>
+        );
+      })}
     </div>
   );
 }

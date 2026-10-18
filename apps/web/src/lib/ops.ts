@@ -22,9 +22,9 @@ export const EVENT_LABEL: Record<EventType, string> = {
 };
 
 export const SEVERITY_VIEW: Record<Severity, { glyph: string; label: string; text: string; border: string; bg: string }> = {
-  high: { glyph: "▲", label: "HIGH", text: "text-sev-high", border: "border-l-sev-high", bg: "bg-sev-high" },
-  medium: { glyph: "◆", label: "MEDIUM", text: "text-sev-medium", border: "border-l-sev-medium", bg: "bg-sev-medium" },
-  low: { glyph: "●", label: "LOW", text: "text-sev-low", border: "border-l-sev-low", bg: "bg-sev-low" },
+  high: { glyph: "▲", label: "HIGH", text: "text-fire-ink", border: "border-l-fire", bg: "bg-fire" },
+  medium: { glyph: "◆", label: "MEDIUM", text: "text-warn-ink", border: "border-l-warn", bg: "bg-warn" },
+  low: { glyph: "●", label: "LOW", text: "text-fg-2", border: "border-l-fg-3", bg: "bg-fg-3" },
 };
 
 export const STATUS_LABEL: Record<IncidentStatus, string> = {
@@ -38,13 +38,13 @@ export const STATUS_LABEL: Record<IncidentStatus, string> = {
 };
 
 export const STATUS_TONE: Record<IncidentStatus, string> = {
-  detected: "border-review/60 text-review",
-  confirmed: "border-sev-high/60 text-sev-high",
-  station_selected: "border-sev-high/60 text-sev-high",
-  notified: "border-notified/60 text-notified",
-  acknowledged: "border-ack/60 text-ack",
-  resolved: "border-resolved text-ink-300",
-  rejected: "border-resolved text-ink-300",
+  detected: "bg-warn-soft text-warn-ink",
+  confirmed: "bg-fire-soft text-fire-ink",
+  station_selected: "bg-fire-soft text-fire-ink",
+  notified: "bg-info-soft text-info",
+  acknowledged: "bg-ok-soft text-ok-ink",
+  resolved: "bg-muted text-fg-2",
+  rejected: "bg-muted text-fg-2",
 };
 
 const CLOSED: IncidentStatus[] = ["resolved", "rejected"];
@@ -65,34 +65,34 @@ export function sortIncidents(incidents: Incident[]): Incident[] {
 
 export interface TimelineView {
   label: string;
-  /** Tailwind classes for the 2 px left rule and the label colour. */
+  /** Tailwind background class for the timeline dot. */
   tone: string;
 }
 
 export function timelineView(event: TimelineEvent): TimelineView {
   switch (event.event_type) {
     case "detection_created":
-      return { label: "Detected", tone: "border-l-review text-review" };
+      return { label: "Detected", tone: "bg-warn" };
     case "operator_confirmed":
-      return { label: "Confirmed", tone: "border-l-sev-high text-sev-high" };
+      return { label: "Confirmed", tone: "bg-fire" };
     case "station_selected":
-      return { label: "Station selected", tone: "border-l-notified text-notified" };
+      return { label: "Station selected", tone: "bg-info" };
     case "no_station_available":
-      return { label: "No station available", tone: "border-l-danger text-danger" };
+      return { label: "No station available", tone: "bg-fire" };
     case "route_generated":
-      return { label: "Suggested route", tone: "border-l-notified text-notified" };
+      return { label: "Suggested route", tone: "bg-info" };
     case "route_unavailable":
-      return { label: "Route unavailable", tone: "border-l-ink-500 text-ink-300" };
+      return { label: "Route unavailable", tone: "bg-fg-3" };
     case "status_changed": {
       const to = event.details?.to;
-      if (to === "notified") return { label: "Notified", tone: "border-l-notified text-notified" };
-      if (to === "acknowledged") return { label: "Acknowledged", tone: "border-l-ack text-ack" };
-      return { label: "Status changed", tone: "border-l-ink-500 text-ink-100" };
+      if (to === "notified") return { label: "Notified", tone: "bg-info" };
+      if (to === "acknowledged") return { label: "Acknowledged", tone: "bg-ok" };
+      return { label: "Status changed", tone: "bg-fg-3" };
     }
     case "resolved":
-      return { label: "Resolved", tone: "border-l-resolved text-ink-300" };
+      return { label: "Resolved", tone: "bg-fg-3" };
     case "rejected":
-      return { label: "Rejected", tone: "border-l-resolved text-ink-300" };
+      return { label: "Rejected", tone: "bg-fg-3" };
   }
 }
 
@@ -133,6 +133,8 @@ export function videoOffset(seconds: number | null | undefined): string {
 }
 
 export const confidence = (value: number) => value.toFixed(2);
+/** 0.7274 → "73%" for operator-facing copy. */
+export const confidencePct = (value: number) => `${Math.round(value * 100)}%`;
 
 /** Highest per-class score seen, even when no class was confirmed. */
 export function peakConfidence(classes: Record<string, ClassVerdict>): number | null {
